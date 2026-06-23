@@ -1,0 +1,65 @@
+name: Build wheel (composite)
+description: Builds wheels for SPIR-V Adapter for Model Explorer
+
+inputs:
+  python-version:
+    required: true
+  internal-dev-version:
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python environment
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set internal development version
+      if: inputs.internal-dev-version == 'true'
+      shell: bash
+      run: |
+        BASE_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
+        SHORT_SHA="${GITHUB_SHA::7}"
+        DEV_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+        echo "Building internal development version ${DEV_VERSION} from ${GITHUB_SHA}"
+        sed -i "s/^version = \".*\"$/version = \"${DEV_VERSION}\"/" pyproject.toml
+
+    - name: Build plugin package
+      shell: bash
+      run: |
+        SPIRV_TOOLS_REF=$(sed -n 's/^set(SPIRV_TOOLS_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
+        SPIRV_HEADERS_REF=$(sed -n 's/^set(SPIRV_HEADERS_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
+        WHEEL_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
+
+        BUILD_VENV="$RUNNER_TEMP/spirv-adapter-build-venv"
+        python -m venv --clear "$BUILD_VENV"
+        "$BUILD_VENV/bin/python" -m pip install --upgrade pip
+        "$BUILD_VENV/bin/python" -m pip install auditwheel build cmake ninja spdx-tools==0.8.3
+
+        mkdir -p src/spirv_adapter_model_explorer/vendor/sboms
+        "$BUILD_VENV/bin/python" ./scripts/generate-spirv-tools-bin-sbom.py \
+          --spirv-tools-ref "$SPIRV_TOOLS_REF" \
+          --spirv-headers-ref "$SPIRV_HEADERS_REF" \
+          --wheel-version "$WHEEL_VERSION" \
+          --output src/spirv_adapter_model_explorer/vendor/sboms/spirv-tools-builds.spdx.json
+
+        PATH="$BUILD_VENV/bin:$PATH" "$BUILD_VENV/bin/python" -m build
+
+        mkdir -p wheelhouse
+        "$BUILD_VENV/bin/python" -m auditwheel repair \
+          --plat manylinux_2_35_x86_64 \
+          --strip \
+          -w wheelhouse \
+          dist/*.whl
+
+        mv dist/*.tar.gz wheelhouse/
+        rm -rf dist
+        mv wheelhouse dist
+
+    - name: Upload plugin package artifact
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      with:
+        name: dist
+        path: dist

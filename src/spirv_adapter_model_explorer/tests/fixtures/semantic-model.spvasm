@@ -1,0 +1,52 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 40
+; Schema: 0
+OpCapability Shader
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+%1 = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %20 "main" %11
+OpExecutionMode %20 LocalSize 1 2 3
+OpName %10 "Buffer"
+OpMemberName %10 0 "value"
+OpName %11 "buffer"
+OpName %20 "main_func"
+OpDecorate %11 DescriptorSet 0
+OpDecorate %11 Binding 1
+OpMemberDecorate %10 0 Offset 0
+%30 = OpDecorationGroup
+OpDecorate %30 Restrict
+OpGroupDecorate %30 %11
+%2 = OpTypeVoid
+%3 = OpTypeBool
+%4 = OpTypeInt 32 1
+%5 = OpTypeFloat 32
+%6 = OpTypeVector %5 4
+%7 = OpConstant %4 4
+%8 = OpTypeArray %4 %7
+%10 = OpTypeStruct %4
+%9 = OpTypePointer StorageBuffer %10
+%12 = OpTypePointer Function %4
+%13 = OpConstantTrue %3
+%14 = OpConstantFalse %3
+%15 = OpConstant %4 42
+%16 = OpConstantComposite %6 %15 %15 %15 %15
+%32 = OpTypeArray %6 %7
+%33 = OpConstantComposite %32 %16 %16 %16 %16
+%11 = OpVariable %9 StorageBuffer
+%18 = OpConstantComposite %8 %7 %7 %7 %7
+%19 = OpTypeTensorARM %4 %7 %18
+%31 = OpTypeGraphARM 1 %19 %19
+%17 = OpTypeFunction %2 %4
+%20 = OpFunction %2 None %17
+%21 = OpFunctionParameter %4
+%22 = OpLabel
+OpBranchConditional %13 %23 %24
+%23 = OpLabel
+OpBranch %25
+%24 = OpLabel
+OpBranch %25
+%25 = OpLabel
+OpReturn
+OpFunctionEnd

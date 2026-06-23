@@ -1,0 +1,70 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpExtension "SPV_KHR_non_semantic_info"
+%tosa = OpExtInstImport "TOSA.001000.1"
+%debug = OpExtInstImport "NonSemantic.Graph.DebugInfo.1"
+OpMemoryModel Logical GLSL450
+%graph_debug_name = OpString "main graph debug"
+%input0_debug_name = OpString "input element zero debug"
+%input1_debug_name = OpString "input element one debug"
+%add0_debug_name = OpString "add0 operation debug"
+%add1_debug_name = OpString "add1 operation debug"
+%add2_debug_name = OpString "add2 operation debug"
+%add0_output_debug_name = OpString "add0 output debug"
+%add1_output_debug_name = OpString "add1 output debug"
+%add2_output_debug_name = OpString "add2 output debug"
+%output0_debug_name = OpString "output element zero debug"
+%debug_output_debug_name = OpString "output element one debug"
+OpName %input0 "input0"
+OpName %input1 "input1"
+OpName %add0 "add0"
+OpName %add1 "add1"
+OpName %add2 "add2"
+
+OpDecorate %input_array_ptr DescriptorSet 0
+OpDecorate %input_array_ptr Binding 0
+OpDecorate %output_array_ptr DescriptorSet 0
+OpDecorate %output_array_ptr Binding 1
+
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_2 = OpConstant %uint 2
+%uint_array_l1 = OpTypeArray %uint %uint_1
+%shape = OpConstantComposite %uint_array_l1 %uint_1
+%tensor = OpTypeTensorARM %uint8 %uint_1 %shape
+%tensor_array = OpTypeArray %tensor %uint_2
+%ptr_tensor_array = OpTypePointer UniformConstant %tensor_array
+%graph_type = OpTypeGraphARM 1 %tensor_array %tensor_array
+
+%input_array_ptr = OpVariable %ptr_tensor_array UniformConstant
+%output_array_ptr = OpVariable %ptr_tensor_array UniformConstant
+
+OpGraphEntryPointARM %graph "main" %input_array_ptr %output_array_ptr
+%graph = OpGraphARM %graph_type
+%input0 = OpGraphInputARM %tensor %uint_0 %uint_0
+%input1 = OpGraphInputARM %tensor %uint_0 %uint_1
+%add0 = OpExtInst %tensor %tosa ADD %input0 %input1
+%add1 = OpExtInst %tensor %tosa ADD %add0 %input1
+%add2 = OpExtInst %tensor %tosa ADD %add1 %input0
+%debug_graph = OpExtInst %uint %debug 1 %graph %graph_debug_name
+%debug_input0 = OpExtInst %uint %debug 3 %input0 %input0_debug_name
+%debug_input1 = OpExtInst %uint %debug 3 %input1 %input1_debug_name
+%debug_add0 = OpExtInst %uint %debug 2 %debug_graph %add0_debug_name %add0
+%debug_add1 = OpExtInst %uint %debug 2 %debug_graph %add1_debug_name %add1
+%debug_add2 = OpExtInst %uint %debug 2 %debug_graph %add2_debug_name %add2
+%debug_add0_output = OpExtInst %uint %debug 3 %add0 %add0_output_debug_name %uint_0
+%debug_add1_output = OpExtInst %uint %debug 3 %add1 %add1_output_debug_name %uint_0
+%debug_add2_output = OpExtInst %uint %debug 3 %add2 %add2_output_debug_name %uint_0
+OpGraphSetOutputARM %input0 %uint_0 %uint_0
+OpGraphSetOutputARM %add2 %uint_0 %uint_1
+OpGraphEndARM

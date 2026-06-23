@@ -1,0 +1,47 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 200
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpCapability ReplicatedCompositesEXT
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpExtension "SPV_EXT_replicated_composites"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical GLSL450
+
+%bool = OpTypeBool
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_2 = OpConstant %uint 2
+%uint_minus_1 = OpConstant %uint 4294967295
+%true = OpConstantTrue %bool
+%false = OpConstantFalse %bool
+%uint_array_l1 = OpTypeArray %uint %uint_1
+%shape_l1 = OpConstantComposite %uint_array_l1 %uint_1
+%shape_l2 = OpConstantComposite %uint_array_l1 %uint_2
+%uint8_tensor_l1 = OpTypeTensorARM %uint8 %uint_1 %shape_l1
+%uint_tensor_l1 = OpTypeTensorARM %uint %uint_1 %shape_l1
+%uint_tensor_l2 = OpTypeTensorARM %uint %uint_1 %shape_l2
+%uint_pair_minus_1 = OpConstantCompositeReplicateEXT %uint_tensor_l2 %uint_minus_1
+%uint_scalar_minus_1 = OpConstantCompositeReplicateEXT %uint_tensor_l1 %uint_minus_1
+%ptr_tensor = OpTypePointer UniformConstant %uint8_tensor_l1
+%graph_type = OpTypeGraphARM 1 %uint8_tensor_l1 %uint8_tensor_l1
+
+%input_ptr = OpVariable %ptr_tensor UniformConstant
+%output_ptr = OpVariable %ptr_tensor UniformConstant
+
+OpGraphEntryPointARM %graph "main" %input_ptr %output_ptr
+%graph = OpGraphARM %graph_type
+%input = OpGraphInputARM %uint8_tensor_l1 %uint_0
+%resize = OpExtInst %uint8_tensor_l1 %tosa RESIZE %uint_1 %input %uint_pair_minus_1 %uint_pair_minus_1 %uint_pair_minus_1
+%rescale_unsigned = OpExtInst %uint8_tensor_l1 %tosa RESCALE %true %uint_0 %true %true %true %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1
+%rescale_signed = OpExtInst %uint8_tensor_l1 %tosa RESCALE %true %uint_0 %true %false %false %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1
+%rescale_mixed = OpExtInst %uint8_tensor_l1 %tosa RESCALE %true %uint_0 %true %true %false %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1 %uint_scalar_minus_1
+OpGraphSetOutputARM %resize %uint_0
+OpGraphEndARM

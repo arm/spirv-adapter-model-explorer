@@ -1,0 +1,65 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpMemoryModel Logical GLSL450
+
+OpName %11 "first_graph"
+OpName %12 "second_graph"
+OpName %30 "first_input"
+OpName %31 "second_input"
+
+OpDecorate %2 DescriptorSet 0
+OpDecorate %2 Binding 0
+OpDecorate %3 DescriptorSet 0
+OpDecorate %3 Binding 1
+OpDecorate %4 DescriptorSet 7
+OpDecorate %4 Binding 19
+OpDecorate %5 DescriptorSet 7
+OpDecorate %5 Binding 20
+OpDecorate %8 DescriptorSet 1
+OpDecorate %8 Binding 0
+OpDecorate %9 DescriptorSet 1
+OpDecorate %9 Binding 1
+OpDecorate %13 DescriptorSet 8
+OpDecorate %13 Binding 21
+OpDecorate %14 DescriptorSet 8
+OpDecorate %14 Binding 22
+
+%20 = OpTypeInt 32 0
+%21 = OpTypeInt 8 0
+%6 = OpConstant %20 0
+%7 = OpConstant %20 1
+%22 = OpTypeArray %20 %7
+%23 = OpConstantComposite %22 %7
+%24 = OpTypeTensorARM %21 %7 %23
+%25 = OpTypePointer UniformConstant %24
+%10 = OpTypeGraphARM 1 %24 %24
+
+%2 = OpVariable %25 UniformConstant
+%3 = OpVariable %25 UniformConstant
+%4 = OpVariable %25 UniformConstant
+%5 = OpVariable %25 UniformConstant
+%8 = OpVariable %25 UniformConstant
+%9 = OpVariable %25 UniformConstant
+%13 = OpVariable %25 UniformConstant
+%14 = OpVariable %25 UniformConstant
+
+OpGraphEntryPointARM %11 "first" %2 %3
+OpGraphEntryPointARM %11 "first_alt" %4 %5
+OpGraphEntryPointARM %12 "second" %8 %9
+OpGraphEntryPointARM %12 "second_alt" %13 %14
+%11 = OpGraphARM %10
+%30 = OpGraphInputARM %24 %6
+OpGraphSetOutputARM %30 %6
+OpGraphEndARM
+%12 = OpGraphARM %10
+%31 = OpGraphInputARM %24 %6
+OpGraphSetOutputARM %31 %6
+OpGraphEndARM
