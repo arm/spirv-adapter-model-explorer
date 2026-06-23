@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+build-backend = "scikit_build_core.build"
+requires = [
+  "scikit-build-core>=0.11",
+  "cffi>=1.16",
+]
+
+[project]
+name = "spirv-adapter-model-explorer"
+version = "0.1.0"
+description = "Adapter for Model Explorer to support SPIR-V binary files"
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+keywords = ["model-explorer", "spirv", "visualization"]
+license = "Apache-2.0"
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+  "ai-edge-model-explorer>=0.1.26,<0.2.0",
+  "cffi>=1.16",
+]
+
+[project.urls]
+Repository = "https://github.com/arm/spirv-adapter-model-explorer"
+
+[dependency-groups]
+dev = [
+    "ai-edge-model-explorer==0.1.28",
+    "pyright==1.1.407",
+    "pytest==9.0.1",
+    "pytest-timeout==2.4.0",
+    "ruff==0.14.2",
+]
+coverage = [
+    "pytest-cov==7.0.0",
+]
+build = [
+    "build==1.3.0",
+    "wheel==0.45.1",
+    "scikit-build-core==0.11.6",
+]
+
+[tool.scikit-build]
+minimum-version = "0.11"
+cmake.version = ">=3.20"
+build.targets = ["SPIRV-Tools-shared"]
+build.tool-args = []
+install.components = ["spirv_adapter_runtime"]
+wheel.packages = ["src/spirv_adapter_model_explorer"]
+wheel.exclude = ["spirv_adapter_model_explorer/tests/**"]
+sdist.include = ["CMakeLists.txt"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "ai-edge-model-explorer==0.1.28",
+    "build==1.3.0",
+    "cffi>=1.16",
+    "cmake>=3.20",
+    "ninja",
+    "pytest==9.0.1",
+    "pytest-timeout==2.4.0",
+    "scikit-build-core==0.11.6",
+]
+
+[tool.hatch.envs.default.scripts]
+configure-native = "cmake -S . -B .native/build"
+build-native = "cmake --build .native/build --target SPIRV-Tools-shared --config Release"
+stage-native = "python tools/stage_spirv_tools_for_tests.py"
+test = [
+    "configure-native",
+    "build-native",
+    "stage-native",
+    "pytest -q",
+]
+
+[tool.pyright]
+include = [
+  "src",
+]
+exclude = [
+  "src/spirv_adapter_model_explorer/tests",
+]
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+pythonpath = "src"
+testpaths = ["src/spirv_adapter_model_explorer/tests"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+# https://docs.astral.sh/ruff/rules/
+select = [
+    "F", #Pyflakes
+    "B", #Bugbear
+    "I", #Isort
+    "SIM", #Simplify
+    "C4", #Comprehensions
+]

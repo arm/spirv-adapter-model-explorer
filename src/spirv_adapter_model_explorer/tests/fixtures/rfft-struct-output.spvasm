@@ -1,0 +1,44 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical GLSL450
+OpName %local_bound "local_bound"
+OpName %input_real "input_real"
+OpName %rfft "rfft"
+OpName %real "real"
+OpName %imag "imag"
+
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_array_l1 = OpTypeArray %uint %uint_1
+%shape = OpConstantComposite %uint_array_l1 %uint_1
+%tensor = OpTypeTensorARM %uint8 %uint_1 %shape
+%rfft_outputs = OpTypeStruct %tensor %tensor
+%ptr_tensor = OpTypePointer UniformConstant %tensor
+%graph_type = OpTypeGraphARM 2 %tensor %tensor %tensor %tensor
+
+%local_bound_ptr = OpVariable %ptr_tensor UniformConstant
+%input_real_ptr = OpVariable %ptr_tensor UniformConstant
+%output_real_ptr = OpVariable %ptr_tensor UniformConstant
+%output_imag_ptr = OpVariable %ptr_tensor UniformConstant
+
+OpGraphEntryPointARM %graph "main" %local_bound_ptr %input_real_ptr %output_real_ptr %output_imag_ptr
+%graph = OpGraphARM %graph_type
+%local_bound = OpGraphInputARM %tensor %uint_0
+%input_real = OpGraphInputARM %tensor %uint_1
+%rfft = OpExtInst %rfft_outputs %tosa RFFT2D %local_bound %input_real
+%real = OpCompositeExtract %tensor %rfft 0
+%imag = OpCompositeExtract %tensor %rfft 1
+OpGraphSetOutputARM %real %uint_0
+OpGraphSetOutputARM %imag %uint_1
+OpGraphEndARM
