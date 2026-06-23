@@ -1,0 +1,43 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical GLSL450
+OpName %input0 "input0"
+OpName %input1 "input1"
+OpName %input2 "input2"
+OpName %concat "concat"
+
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_2 = OpConstant %uint 2
+%uint_3 = OpConstant %uint 3
+%axis = OpConstant %uint 0
+%uint_array_l1 = OpTypeArray %uint %uint_1
+%shape = OpConstantComposite %uint_array_l1 %uint_1
+%tensor = OpTypeTensorARM %uint8 %uint_1 %shape
+%ptr_tensor = OpTypePointer UniformConstant %tensor
+%graph_type = OpTypeGraphARM 3 %tensor %tensor %tensor %tensor
+
+%input0_ptr = OpVariable %ptr_tensor UniformConstant
+%input1_ptr = OpVariable %ptr_tensor UniformConstant
+%input2_ptr = OpVariable %ptr_tensor UniformConstant
+%output_ptr = OpVariable %ptr_tensor UniformConstant
+
+OpGraphEntryPointARM %graph "main" %input0_ptr %input1_ptr %input2_ptr %output_ptr
+%graph = OpGraphARM %graph_type
+%input0 = OpGraphInputARM %tensor %uint_0
+%input1 = OpGraphInputARM %tensor %uint_1
+%input2 = OpGraphInputARM %tensor %uint_2
+%concat = OpExtInst %tensor %tosa CONCAT %axis %input0 %input1 %input2
+OpGraphSetOutputARM %concat %uint_0
+OpGraphEndARM
