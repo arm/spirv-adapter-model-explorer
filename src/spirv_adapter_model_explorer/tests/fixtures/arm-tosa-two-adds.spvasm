@@ -1,0 +1,52 @@
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical GLSL450
+OpName %in0 "in0"
+OpName %in1 "in1"
+OpName %add0 "add0"
+OpName %add1 "add1"
+
+OpDecorate %input0_ptr DescriptorSet 0
+OpDecorate %input0_ptr Binding 0
+OpDecorate %input1_ptr DescriptorSet 0
+OpDecorate %input1_ptr Binding 1
+OpDecorate %output0_ptr DescriptorSet 0
+OpDecorate %output0_ptr Binding 2
+OpDecorate %output1_ptr DescriptorSet 0
+OpDecorate %output1_ptr Binding 3
+
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%uint_2 = OpConstant %uint 2
+%uint8_0 = OpConstant %uint8 0
+%uint_array_l1 = OpTypeArray %uint %uint_1
+%shape = OpConstantComposite %uint_array_l1 %uint_1
+%tensor = OpTypeTensorARM %uint8 %uint_1 %shape
+%ptr_tensor = OpTypePointer UniformConstant %tensor
+%graph_type = OpTypeGraphARM 2 %tensor %tensor %tensor %tensor
+
+%input0_ptr = OpVariable %ptr_tensor UniformConstant
+%input1_ptr = OpVariable %ptr_tensor UniformConstant
+%output0_ptr = OpVariable %ptr_tensor UniformConstant
+%output1_ptr = OpVariable %ptr_tensor UniformConstant
+
+OpGraphEntryPointARM %graph "main" %input0_ptr %input1_ptr %output0_ptr %output1_ptr
+%graph = OpGraphARM %graph_type
+%in0 = OpGraphInputARM %tensor %uint_0
+%in1 = OpGraphInputARM %tensor %uint_1
+%add0 = OpExtInst %tensor %tosa ADD %in0 %in1
+%add1 = OpExtInst %tensor %tosa ADD %add0 %in1
+OpGraphSetOutputARM %add0 %uint_0
+OpGraphSetOutputARM %add1 %uint_1
+OpGraphEndARM
