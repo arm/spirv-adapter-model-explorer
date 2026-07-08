@@ -52,7 +52,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Qlty
-        uses: qltysh/qlty-action/install@a2277a908db90c4c868832fb9204521fb940fdb4 # v1.2.0
+        uses: qltysh/qlty-action/install@dafbc1e328f1f92525f1a3916724bd5fa01498e8 # v1.2.0
 
       - name: Run Qlty
         env:
