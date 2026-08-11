@@ -43,7 +43,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(SPIRV-Tools)
 
 if(WIN32)
-  set(SPIRV_ADAPTER_VENDOR_PLATFORM "win_amd64")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    set(SPIRV_ADAPTER_VENDOR_PLATFORM "win_arm64")
+  else()
+    set(SPIRV_ADAPTER_VENDOR_PLATFORM "win_amd64")
+  endif()
 elseif(APPLE)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     set(SPIRV_ADAPTER_VENDOR_PLATFORM "macos_arm64")

@@ -17,6 +17,8 @@ def _platform_dir() -> str:
 
     if system == "Windows" and machine in {"amd64", "x86_64"}:
         return "win_amd64"
+    if system == "Windows" and machine in {"arm64", "aarch64"}:
+        return "win_arm64"
     if system == "Linux" and machine in {"amd64", "x86_64"}:
         return "linux_x86_64"
     if system == "Linux" and machine in {"aarch64", "arm64"}:
