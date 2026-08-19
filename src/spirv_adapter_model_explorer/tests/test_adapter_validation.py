@@ -3,14 +3,19 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch, sentinel
+
 import pytest
 
 from spirv_adapter_model_explorer import validation
-from spirv_adapter_model_explorer.main import SpirvAdapter
+from spirv_adapter_model_explorer.main import (
+    ADAPTER_CONFIG_EDITORS_AVAILABLE,
+    SHOW_GRAPH_CONSTANTS_SETTING,
+    SpirvAdapter,
+)
 from spirv_adapter_model_explorer.native.loader import (
     SpirvToolsUnavailableError,
 )
-from spirv_adapter_model_explorer.spirv.spirv_parser import SPIRV_MAGIC
 from spirv_adapter_model_explorer.validation import (
     SpirvValidationDiagnostic,
     SpirvValidationResult,
@@ -24,18 +29,8 @@ def _write_words(path, words: list[int]) -> None:
     path.write_bytes(b"".join(word.to_bytes(4, "little") for word in words))
 
 
-def _write_parseable_spirv(path) -> None:
-    _write_words(
-        path,
-        [
-            SPIRV_MAGIC,
-            0x00010000,
-            0,
-            1,
-            0,
-            (1 << 16) | 253,  # OpReturn: structurally parseable here.
-        ],
-    )
+def _write_valid_graph_spirv(path) -> None:
+    path.write_bytes(assemble_valid_spirv(MULTI_INPUT_OUTPUT_GRAPH_ASM))
 
 
 def _validation_failure(message: str) -> SpirvValidationResult:
@@ -56,6 +51,50 @@ def _validation_failure(message: str) -> SpirvValidationResult:
 
 def test_adapter_metadata_supports_spirv_assembly_files():
     assert "spvasm" in SpirvAdapter.metadata.fileExts
+
+
+def test_adapter_config_editors_match_model_explorer_capability():
+    result = SpirvAdapter().get_config_editors()
+
+    assert result.error == ""
+    assert result.configEditors is not None
+    if not ADAPTER_CONFIG_EDITORS_AVAILABLE:
+        assert result.configEditors == []
+        return
+
+    assert len(result.configEditors) == 1
+    editor = result.configEditors[0]
+    assert editor.id == SHOW_GRAPH_CONSTANTS_SETTING
+    assert editor.label == "Show graph constants"
+    assert editor.defaultValue is False
+
+
+def test_convert_hides_graph_constant_nodes_by_default(tmp_path):
+    spv_path = tmp_path / "graph.spv"
+    spv_path.write_bytes(b"SPIR-V")
+    with patch(
+        "spirv_adapter_model_explorer.main.build_spirv_graphs_from_bytes",
+        return_value=[sentinel.graph],
+    ) as mock_build:
+        result = SpirvAdapter().convert(str(spv_path), {})
+
+    mock_build.assert_called_once_with(b"SPIR-V", show_graph_constants=False)
+    assert result == {"graphs": [sentinel.graph]}
+
+
+def test_convert_shows_graph_constant_nodes_when_enabled(tmp_path):
+    spv_path = tmp_path / "graph.spv"
+    spv_path.write_bytes(b"SPIR-V")
+    with patch(
+        "spirv_adapter_model_explorer.main.build_spirv_graphs_from_bytes",
+        return_value=[sentinel.graph],
+    ) as mock_build:
+        result = SpirvAdapter().convert(
+            str(spv_path), {SHOW_GRAPH_CONSTANTS_SETTING: True}
+        )
+
+    mock_build.assert_called_once_with(b"SPIR-V", show_graph_constants=True)
+    assert result == {"graphs": [sentinel.graph]}
 
 
 def test_spvasm_file_is_assembled_before_conversion(tmp_path):
@@ -97,7 +136,7 @@ def test_validation_pass_is_attached_to_successfully_parsed_graph(
         lambda _data: SpirvValidationResult(ok=True, diagnostics=()),
     )
     spv_path = tmp_path / "valid.spv"
-    _write_parseable_spirv(spv_path)
+    _write_valid_graph_spirv(spv_path)
 
     result = SpirvAdapter().convert(str(spv_path), {})
 
@@ -137,7 +176,7 @@ def test_validation_unavailable_is_attached_to_successfully_parsed_graph(
 
     monkeypatch.setattr(validation, "validate_spirv", unavailable)
     spv_path = tmp_path / "validation_unavailable.spv"
-    _write_parseable_spirv(spv_path)
+    _write_valid_graph_spirv(spv_path)
 
     result = SpirvAdapter().convert(str(spv_path), {})
 
@@ -159,13 +198,20 @@ def test_validation_failure_is_attached_to_successfully_parsed_graph(
         lambda _data: _validation_failure("validation says no"),
     )
     spv_path = tmp_path / "invalid_but_parseable.spv"
-    _write_parseable_spirv(spv_path)
+    _write_valid_graph_spirv(spv_path)
 
     result = SpirvAdapter().convert(str(spv_path), {})
 
     graph = result["graphs"][0]
-    assert graph.id == "module"
-    assert [node.label for node in graph.nodes] == ["OpReturn"]
+    assert graph.id.startswith("graph_")
+    assert [node.label for node in graph.nodes] == [
+        "Input 0",
+        "Input 1",
+        "ADD",
+        "ADD",
+        "Output 0",
+        "Output 1",
+    ]
     assert graph.groupNodeAttributes is not None
     graph_attrs = graph.groupNodeAttributes[""]
     assert graph_attrs["Validation"] == "Failed"

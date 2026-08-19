@@ -135,7 +135,7 @@ class FunctionType(Type):
 
 
 @dataclass(frozen=True)
-class TensorArmType(Type):
+class TensorType(Type):
     element_type_id: Id
     rank_id: Id
     shape_id: Id | None = None
@@ -145,7 +145,7 @@ class TensorArmType(Type):
 
 
 @dataclass(frozen=True)
-class GraphArmType(Type):
+class DataGraphType(Type):
     input_type_ids: tuple[Id, ...]
     output_type_ids: tuple[Id, ...]
     input_types: tuple[Type | None, ...] = field(
@@ -213,7 +213,7 @@ class EntryPoint:
 
 
 @dataclass(frozen=True)
-class GraphArmInput:
+class DataGraphInput:
     id: Id
     type_id: Id
     input_index_id: Id
@@ -232,7 +232,7 @@ class GraphArmInput:
 
 
 @dataclass(frozen=True)
-class GraphArmOperation:
+class DataGraphOperation:
     id: Id
     type_id: Id
     opcode_name: str
@@ -268,7 +268,7 @@ class GraphArmOperation:
 
 
 @dataclass(frozen=True)
-class GraphArmOutput:
+class DataGraphOutput:
     value_id: Id
     output_index_id: Id
     instruction: SpirvInstruction
@@ -286,25 +286,25 @@ class GraphArmOutput:
 
 
 @dataclass(frozen=True)
-class GraphArm:
+class DataGraph:
     id: Id
     type_id: Id
     instruction: SpirvInstruction
     body_instructions: tuple[SpirvInstruction, ...]
-    inputs: tuple[GraphArmInput, ...]
-    operations: tuple[GraphArmOperation, ...]
-    outputs: tuple[GraphArmOutput, ...]
+    inputs: tuple[DataGraphInput, ...]
+    operations: tuple[DataGraphOperation, ...]
+    outputs: tuple[DataGraphOutput, ...]
     debug_info: tuple[str, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
-    type: GraphArmType | None = field(default=None, repr=False, compare=False)
-    entry_points: tuple[GraphArmEntryPoint, ...] = field(
+    type: DataGraphType | None = field(default=None, repr=False, compare=False)
+    entry_points: tuple[DataGraphEntryPoint, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
 
 
 @dataclass(frozen=True)
-class GraphArmEntryPoint:
+class DataGraphEntryPoint:
     graph_id: Id
     name: str
     interface_ids: tuple[Id, ...]
@@ -312,8 +312,8 @@ class GraphArmEntryPoint:
     graph_definition: Definition | None = field(
         default=None, repr=False, compare=False
     )
-    graph: GraphArm | None = field(default=None, repr=False, compare=False)
-    graph_type: GraphArmType | None = field(
+    graph: DataGraph | None = field(default=None, repr=False, compare=False)
+    graph_type: DataGraphType | None = field(
         default=None, repr=False, compare=False
     )
     interfaces: tuple[Variable | None, ...] = field(
@@ -375,7 +375,8 @@ class SpirvModuleModel:
     extended_instruction_imports: dict[Id, ExtInstImport]
     memory_model: MemoryModel | None
     entry_points: dict[Id, EntryPoint]
-    graph_entry_points: tuple[GraphArmEntryPoint, ...]
+    entry_point_declarations: tuple[EntryPoint, ...]
+    data_graph_entry_points: tuple[DataGraphEntryPoint, ...]
     execution_modes: tuple[ExecutionMode, ...]
     debug_names: DebugNames
     decorations: DecorationIndex
@@ -383,7 +384,7 @@ class SpirvModuleModel:
     constants: dict[Id, Constant]
     variables: dict[Id, Variable]
     functions: dict[Id, Function]
-    graphs: dict[Id, GraphArm]
+    data_graphs: dict[Id, DataGraph]
     global_instructions: tuple[SpirvInstruction, ...]
     definitions: dict[Id, Definition]
     uses: dict[Id, tuple[Use, ...]]
@@ -445,12 +446,12 @@ __all__ = [
     "Function",
     "FunctionParameter",
     "FunctionType",
-    "GraphArm",
-    "GraphArmEntryPoint",
-    "GraphArmInput",
-    "GraphArmOperation",
-    "GraphArmOutput",
-    "GraphArmType",
+    "DataGraph",
+    "DataGraphEntryPoint",
+    "DataGraphInput",
+    "DataGraphOperation",
+    "DataGraphOutput",
+    "DataGraphType",
     "Id",
     "MatrixType",
     "MemberDecoration",
@@ -460,7 +461,7 @@ __all__ = [
     "ScalarType",
     "SpirvModuleModel",
     "StructType",
-    "TensorArmType",
+    "TensorType",
     "Type",
     "UnknownType",
     "Use",

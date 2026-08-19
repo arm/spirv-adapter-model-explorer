@@ -5,11 +5,16 @@ from __future__ import annotations
 
 from .constants import _collect_constants, _resolve_constant_values
 from .functions import _collect_functions
-from .graphs import _collect_graph_entry_points, _collect_graphs
+from .graphs import _collect_data_graph_entry_points, _collect_data_graphs
 from .spirv_grammar import SpirvGrammar
 from .spirv_parser import SpirvInstruction, SpirvModule
 from .types import (
     ArrayType,
+    DataGraph,
+    DataGraphInput,
+    DataGraphOperation,
+    DataGraphOutput,
+    DataGraphType,
     DebugNames,
     Decoration,
     DecorationIndex,
@@ -18,11 +23,6 @@ from .types import (
     ExecutionMode,
     ExtInstImport,
     FunctionType,
-    GraphArm,
-    GraphArmInput,
-    GraphArmOperation,
-    GraphArmOutput,
-    GraphArmType,
     Id,
     MatrixType,
     MemberDecoration,
@@ -32,7 +32,7 @@ from .types import (
     ScalarType,
     SpirvModuleModel,
     StructType,
-    TensorArmType,
+    TensorType,
     Type,
     UnknownType,
     Use,
@@ -58,8 +58,12 @@ def build_semantic_model(
     variables = _collect_variables(module)
     functions = _collect_functions(module)
     extended_instruction_imports = _collect_ext_inst_imports(module)
-    graphs = _collect_graphs(module, grammar, extended_instruction_imports)
+    data_graphs = _collect_data_graphs(
+        module, grammar, extended_instruction_imports
+    )
     uses = _collect_uses(module)
+
+    entry_point_declarations = _collect_entry_point_declarations(module)
 
     model = SpirvModuleModel(
         header=module.header,
@@ -67,8 +71,9 @@ def build_semantic_model(
         extensions=_collect_extensions(module),
         extended_instruction_imports=extended_instruction_imports,
         memory_model=_collect_memory_model(module),
-        entry_points=_collect_entry_points(module),
-        graph_entry_points=_collect_graph_entry_points(module),
+        entry_points=_entry_points_by_id(entry_point_declarations),
+        entry_point_declarations=entry_point_declarations,
+        data_graph_entry_points=_collect_data_graph_entry_points(module),
         execution_modes=_collect_execution_modes(module),
         debug_names=debug_names,
         decorations=decorations,
@@ -76,7 +81,7 @@ def build_semantic_model(
         constants=constants,
         variables=variables,
         functions=functions,
-        graphs=graphs,
+        data_graphs=data_graphs,
         global_instructions=_collect_global_instructions(module),
         definitions=definitions,
         uses=uses,
@@ -129,7 +134,7 @@ def _resolve_references(model: SpirvModuleModel) -> None:
                 ),
             )
 
-    for entry_point in model.entry_points.values():
+    for entry_point in model.entry_point_declarations:
         _set_resolved_attr(
             entry_point, "function", model.functions.get(entry_point.id)
         )
@@ -142,23 +147,23 @@ def _resolve_references(model: SpirvModuleModel) -> None:
             ),
         )
 
-    entry_points_by_graph_id: dict[Id, list] = {}
-    for graph_entry_point in model.graph_entry_points:
-        entry_points_by_graph_id.setdefault(
-            graph_entry_point.graph_id, []
-        ).append(graph_entry_point)
+    entry_points_by_data_graph_id: dict[Id, list] = {}
+    for data_graph_entry_point in model.data_graph_entry_points:
+        entry_points_by_data_graph_id.setdefault(
+            data_graph_entry_point.graph_id, []
+        ).append(data_graph_entry_point)
 
-    for graph in model.graphs.values():
+    for graph in model.data_graphs.values():
         graph_type = model.types.get(graph.type_id)
         _set_resolved_attr(
             graph,
             "type",
-            graph_type if isinstance(graph_type, GraphArmType) else None,
+            graph_type if isinstance(graph_type, DataGraphType) else None,
         )
         _set_resolved_attr(
             graph,
             "entry_points",
-            tuple(entry_points_by_graph_id.get(graph.id, ())),
+            tuple(entry_points_by_data_graph_id.get(graph.id, ())),
         )
         for graph_input in graph.inputs:
             _set_resolved_attr(
@@ -216,24 +221,26 @@ def _resolve_references(model: SpirvModuleModel) -> None:
                 else None,
             )
 
-    for graph_entry_point in model.graph_entry_points:
-        graph_definition = model.definitions.get(graph_entry_point.graph_id)
-        _set_resolved_attr(
-            graph_entry_point, "graph_definition", graph_definition
+    for data_graph_entry_point in model.data_graph_entry_points:
+        graph_definition = model.definitions.get(
+            data_graph_entry_point.graph_id
         )
-        graph = model.graphs.get(graph_entry_point.graph_id)
-        _set_resolved_attr(graph_entry_point, "graph", graph)
         _set_resolved_attr(
-            graph_entry_point,
+            data_graph_entry_point, "graph_definition", graph_definition
+        )
+        graph = model.data_graphs.get(data_graph_entry_point.graph_id)
+        _set_resolved_attr(data_graph_entry_point, "graph", graph)
+        _set_resolved_attr(
+            data_graph_entry_point,
             "graph_type",
             graph.type if graph is not None else None,
         )
         _set_resolved_attr(
-            graph_entry_point,
+            data_graph_entry_point,
             "interfaces",
             tuple(
                 model.variables.get(interface_id)
-                for interface_id in graph_entry_point.interface_ids
+                for interface_id in data_graph_entry_point.interface_ids
             ),
         )
 
@@ -257,20 +264,20 @@ def _attach_graph_debug_info(
         return
 
     strings = _collect_debug_strings(module)
-    graphs_by_id = model.graphs
+    data_graphs_by_id = model.data_graphs
     operations_by_id = {
         operation.id: operation
-        for graph in model.graphs.values()
+        for graph in model.data_graphs.values()
         for operation in graph.operations
     }
     inputs_by_id = {
         graph_input.id: graph_input
-        for graph in model.graphs.values()
+        for graph in model.data_graphs.values()
         for graph_input in graph.inputs
     }
     outputs_by_value_and_element = {
         (output.value_id, output.element_index_id): output
-        for graph in model.graphs.values()
+        for graph in model.data_graphs.values()
         for output in graph.outputs
     }
     output_debug_by_operation: dict[Id, dict[int, list[str]]] = {}
@@ -283,7 +290,7 @@ def _attach_graph_debug_info(
             continue
         opcode = _literal_int(inst.operands[3].display)
         if opcode == 1:
-            _attach_debug_graph(inst, strings, graphs_by_id)
+            _attach_debug_graph(inst, strings, data_graphs_by_id)
         elif opcode == 2:
             _attach_debug_operation(inst, strings, operations_by_id)
         elif opcode == 3:
@@ -331,13 +338,13 @@ def _collect_debug_strings(module: SpirvModule) -> dict[Id, str]:
 def _attach_debug_graph(
     inst: SpirvInstruction,
     strings: dict[Id, str],
-    graphs_by_id: dict[Id, GraphArm],
+    data_graphs_by_id: dict[Id, DataGraph],
 ) -> None:
     graph_id = inst.operands[4].ref_id
     debug_info = _debug_string_operand(inst, strings, 5)
     if graph_id is None or debug_info is None:
         return
-    graph = graphs_by_id.get(graph_id)
+    graph = data_graphs_by_id.get(graph_id)
     if graph is not None:
         _append_debug_info(graph, debug_info)
 
@@ -345,7 +352,7 @@ def _attach_debug_graph(
 def _attach_debug_operation(
     inst: SpirvInstruction,
     strings: dict[Id, str],
-    operations_by_id: dict[Id, GraphArmOperation],
+    operations_by_id: dict[Id, DataGraphOperation],
 ) -> None:
     debug_info = _debug_string_operand(inst, strings, 5)
     if debug_info is None:
@@ -362,9 +369,9 @@ def _attach_debug_operation(
 def _attach_debug_tensor(
     inst: SpirvInstruction,
     strings: dict[Id, str],
-    inputs_by_id: dict[Id, GraphArmInput],
-    operations_by_id: dict[Id, GraphArmOperation],
-    outputs_by_value_and_element: dict[tuple[Id, Id | None], GraphArmOutput],
+    inputs_by_id: dict[Id, DataGraphInput],
+    operations_by_id: dict[Id, DataGraphOperation],
+    outputs_by_value_and_element: dict[tuple[Id, Id | None], DataGraphOutput],
     output_debug_by_operation: dict[Id, dict[int, list[str]]],
     model: SpirvModuleModel,
 ) -> None:
@@ -513,7 +520,7 @@ def _resolve_type_references(
                 for parameter_type_id in type_model.parameter_type_ids
             ),
         )
-    elif isinstance(type_model, TensorArmType):
+    elif isinstance(type_model, TensorType):
         _set_resolved_attr(
             type_model,
             "element_type",
@@ -529,7 +536,7 @@ def _resolve_type_references(
             if type_model.shape_id is not None
             else None,
         )
-    elif isinstance(type_model, GraphArmType):
+    elif isinstance(type_model, DataGraphType):
         _set_resolved_attr(
             type_model,
             "input_types",
@@ -804,7 +811,7 @@ def _collect_types(module: SpirvModule) -> dict[Id, Type]:
                 parameter_type_ids=tuple(int(value) for value in values[1:]),
             )
         elif inst.opname == "OpTypeTensorARM" and len(values) >= 2:
-            type_model = TensorArmType(
+            type_model = TensorType(
                 inst.result_id,
                 inst.opname,
                 inst,
@@ -815,7 +822,7 @@ def _collect_types(module: SpirvModule) -> dict[Id, Type]:
         elif inst.opname == "OpTypeGraphARM" and values:
             num_inputs = int(values[0])
             in_out_type_ids = tuple(int(value) for value in values[1:])
-            type_model = GraphArmType(
+            type_model = DataGraphType(
                 inst.result_id,
                 inst.opname,
                 inst,
@@ -899,32 +906,47 @@ def _collect_memory_model(module: SpirvModule) -> MemoryModel | None:
     return None
 
 
-def _collect_entry_points(module: SpirvModule) -> dict[Id, EntryPoint]:
-    entry_points: dict[Id, EntryPoint] = {}
+def _collect_entry_point_declarations(
+    module: SpirvModule,
+) -> tuple[EntryPoint, ...]:
+    entry_points: list[EntryPoint] = []
     for inst in module.instructions:
         if inst.opname != "OpEntryPoint" or len(inst.operands) < 3:
             continue
         entry_id = inst.operands[1].ref_id
         if entry_id is None:
             continue
-        entry_points[entry_id] = EntryPoint(
-            id=entry_id,
-            execution_model=_enum_display_name(inst.operands[0].display),
-            name=_literal_string(inst.operands[2].display),
-            interface_ids=tuple(
-                operand.ref_id
-                for operand in inst.operands[3:]
-                if operand.ref_id is not None
+        entry_points.append(
+            EntryPoint(
+                id=entry_id,
+                execution_model=_enum_display_name(inst.operands[0].display),
+                name=_literal_string(inst.operands[2].display),
+                interface_ids=tuple(
+                    operand.ref_id
+                    for operand in inst.operands[3:]
+                    if operand.ref_id is not None
+                ),
+                instruction=inst,
             ),
-            instruction=inst,
         )
-    return entry_points
+    return tuple(entry_points)
+
+
+def _entry_points_by_id(
+    entry_point_declarations: tuple[EntryPoint, ...],
+) -> dict[Id, EntryPoint]:
+    return {
+        entry_point.id: entry_point for entry_point in entry_point_declarations
+    }
 
 
 def _collect_execution_modes(module: SpirvModule) -> tuple[ExecutionMode, ...]:
     modes: list[ExecutionMode] = []
     for inst in module.instructions:
-        if inst.opname != "OpExecutionMode" or len(inst.operands) < 2:
+        if (
+            inst.opname not in {"OpExecutionMode", "OpExecutionModeId"}
+            or len(inst.operands) < 2
+        ):
             continue
         entry_id = inst.operands[0].ref_id
         if entry_id is None:

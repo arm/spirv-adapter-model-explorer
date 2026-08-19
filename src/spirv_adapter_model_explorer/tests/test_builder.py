@@ -14,6 +14,7 @@ from spirv_adapter_model_explorer.builder import (
     _incoming_edges_for_operation,
     _operation_output_types,
     _ProducerOutput,
+    build_spirv_graph_from_bytes,
     build_spirv_graphs_from_bytes,
     build_spirv_graphs_from_semantic_model,
 )
@@ -39,15 +40,15 @@ from spirv_adapter_model_explorer.spirv.types import (
     Constant,
     RuntimeArrayType,
     ScalarType,
-    TensorArmType,
+    TensorType,
     VectorType,
 )
 from spirv_adapter_model_explorer.tosa import operation_output_tags
 
-from .test_spirv_parser import assemble_invalid_spirv
+from .test_spirv_parser import assemble_invalid_spirv, assemble_valid_spirv
 
 
-def _module_with_complex_arm_graph() -> SpirvModule:
+def _module_with_complex_data_graph() -> SpirvModule:
     return SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -73,7 +74,7 @@ def _module_with_complex_arm_graph() -> SpirvModule:
     )
 
 
-def _module_with_constant_operand_arm_graph() -> SpirvModule:
+def _module_with_constant_operand_data_graph() -> SpirvModule:
     return SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -104,7 +105,7 @@ def _module_with_constant_operand_arm_graph() -> SpirvModule:
     )
 
 
-def _module_with_graph_constant_operand_arm_graph() -> SpirvModule:
+def _module_with_data_graph_constant_operand_data_graph() -> SpirvModule:
     return SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -133,7 +134,36 @@ def _module_with_graph_constant_operand_arm_graph() -> SpirvModule:
     )
 
 
-def _module_with_tosa_concat_arm_graph() -> SpirvModule:
+def _module_with_constant_outputs_data_graph() -> SpirvModule:
+    return SpirvModule(
+        header=SpirvHeader(
+            magic=SPIRV_MAGIC,
+            version=0x00010000,
+            generator=0,
+            bound=100,
+            schema=0,
+        ),
+        instructions=(
+            _type_int(0, 20, 8),
+            _type_int(1, 21, 32),
+            _constant(2, 21, 6, 0),
+            _constant(3, 21, 7, 1),
+            _type_array(4, 22, 21, 7),
+            _constant_composite(5, 22, 23, (7,)),
+            _type_tensor(6, 24, 20, 7, 23),
+            _constant(7, 20, 8, 5),
+            _constant_composite_replicate(8, 24, 25, 8),
+            _type_graph(9, 10, 0, (24, 24)),
+            _graph_constant(10, 31, 24, 14),
+            _graph(11, 11, 10),
+            _graph_output(12, 31, 6),
+            _graph_output(13, 25, 7),
+            _graph_end(14),
+        ),
+    )
+
+
+def _module_with_tosa_concat_data_graph() -> SpirvModule:
     return SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -931,6 +961,13 @@ def _attrs(node) -> dict[str, str]:
     return {attr.key: attr.value for attr in node.attrs}
 
 
+def _edge_sources(node) -> list[tuple[str, str, str]]:
+    return [
+        (edge.sourceNodeId, edge.sourceNodeOutputId, edge.targetNodeInputId)
+        for edge in node.incomingEdges
+    ]
+
+
 def _metadata_attrs(metadata_items):
     return {
         item.id: {attr.key: attr.value for attr in item.attrs}
@@ -975,7 +1012,7 @@ def test_formats_boolean_values_lowercase():
     vector_type = VectorType(
         2, "OpTypeVector", bool_type_inst, 1, 2, component_type=bool_type
     )
-    tensor_type = TensorArmType(
+    tensor_type = TensorType(
         3, "OpTypeTensorARM", bool_type_inst, 1, 4, element_type=bool_type
     )
     true_inst = _constant_bool(1, 1, 5, True)
@@ -1084,7 +1121,7 @@ def test_large_all_zero_sequence_constant_operand_values_are_summarized():
     )
 
 
-def test_build_spirv_graphs_from_bytes_uses_raw_instruction_fallback():
+def test_build_spirv_graphs_from_bytes_requires_entry_point_or_data_graph():
     data = assemble_invalid_spirv(
         """
 ; SPIR-V
@@ -1103,25 +1140,15 @@ OpFunctionEnd
         expected_diagnostic="No OpEntryPoint instruction was found",
     )
 
-    graphs = build_spirv_graphs_from_bytes(data)
+    import pytest
 
-    assert len(graphs) == 1
-    assert graphs[0].id == "module"
-    assert [node.label for node in graphs[0].nodes] == [
-        "OpCapability",
-        "OpMemoryModel",
-        "OpTypeVoid",
-        "OpTypeFunction",
-        "OpFunction",
-        "OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
+    with pytest.raises(ValueError, match="No OpEntryPoint instruction"):
+        build_spirv_graphs_from_bytes(data)
 
 
-def test_builds_semantic_arm_graph_nodes_and_tosa_attrs():
+def test_builds_semantic_data_graph_nodes_and_tosa_attrs():
     grammar = load_core_grammar()
-    module = _module_with_complex_arm_graph()
+    module = _module_with_complex_data_graph()
     model = build_semantic_model(module, grammar)
 
     graph = build_spirv_graphs_from_semantic_model(model, module=module)[0]
@@ -1159,9 +1186,9 @@ def test_builds_semantic_arm_graph_nodes_and_tosa_attrs():
     assert "SPIR-V / operand 1 ID" not in attr_keys
 
 
-def test_builds_semantic_arm_graph_with_disassembly_source_attrs():
+def test_builds_semantic_data_graph_with_disassembly_source_attrs():
     grammar = load_core_grammar()
-    module = _module_with_complex_arm_graph()
+    module = _module_with_complex_data_graph()
     model = build_semantic_model(module, grammar)
     lines_by_byte_offset = {
         inst.word_offset * 4: SpirvDisassemblyLine(
@@ -1197,9 +1224,9 @@ def test_builds_semantic_arm_graph_with_disassembly_source_attrs():
     )
 
 
-def test_builds_edges_for_complex_arm_graph_dependencies():
+def test_builds_edges_for_complex_data_graph_dependencies():
     grammar = load_core_grammar()
-    module = _module_with_complex_arm_graph()
+    module = _module_with_complex_data_graph()
     model = build_semantic_model(module, grammar)
 
     graph = build_spirv_graphs_from_semantic_model(model, module=module)[0]
@@ -1223,7 +1250,7 @@ def test_builds_edges_for_complex_arm_graph_dependencies():
 
 def test_operation_attrs_show_resolved_constant_operand_values():
     grammar = load_core_grammar()
-    module = _module_with_constant_operand_arm_graph()
+    module = _module_with_constant_operand_data_graph()
     model = build_semantic_model(module, grammar)
     assert model.constants[25].resolved_value == (1, 1, 1, 1)
 
@@ -1239,7 +1266,7 @@ def test_operation_attrs_show_resolved_constant_operand_values():
 
 def test_operation_attrs_show_graph_constant_operand_ids():
     grammar = load_core_grammar()
-    module = _module_with_graph_constant_operand_arm_graph()
+    module = _module_with_data_graph_constant_operand_data_graph()
     model = build_semantic_model(module, grammar)
 
     graph = build_spirv_graphs_from_semantic_model(model, module=module)[0]
@@ -1249,11 +1276,26 @@ def test_operation_attrs_show_graph_constant_operand_ids():
     assert attrs["arg1 input2"] == "<graph constant 14> uint8[1]"
 
 
+def test_output_attrs_show_graph_and_regular_constant_values():
+    grammar = load_core_grammar()
+    module = _module_with_constant_outputs_data_graph()
+    model = build_semantic_model(module, grammar)
+
+    graph = build_spirv_graphs_from_semantic_model(model, module=module)[0]
+
+    output0 = _node_by_label(graph, "Output 0")
+    output1 = _node_by_label(graph, "Output 1")
+    assert _attr_value(output0, "value") == ("<graph constant 14> uint8[1]")
+    assert _attr_value(output1, "value") == "uint8[5]"
+    assert output0.incomingEdges == []
+    assert output1.incomingEdges == []
+
+
 def test_graph_debug_info_strings_populate_graph_operation_and_port_attrs():
     grammar = load_core_grammar()
     module = _module_with_graph_debug_info_graph()
     model = build_semantic_model(module, grammar)
-    semantic_graph = model.graphs[11]
+    semantic_graph = model.data_graphs[11]
     input0 = semantic_graph.inputs[0]
     rfft = next(
         operation
@@ -1285,7 +1327,7 @@ def test_graph_debug_info_strings_populate_graph_operation_and_port_attrs():
 
 def test_tosa_repeated_operands_expand_attrs_and_input_tensor_tags():
     grammar = load_core_grammar()
-    module = _module_with_tosa_concat_arm_graph()
+    module = _module_with_tosa_concat_data_graph()
     model = build_semantic_model(module, grammar)
 
     graph = build_spirv_graphs_from_semantic_model(model, module=module)[0]
@@ -1313,7 +1355,7 @@ def test_operation_output_types_expands_struct_members():
     grammar = load_core_grammar()
     module = _module_with_tosa_rfft_struct_outputs_graph()
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     rfft = next(
         operation
         for operation in graph.operations
@@ -1327,7 +1369,7 @@ def test_tosa_multi_output_tags_name_struct_result_ports():
     grammar = load_core_grammar()
     module = _module_with_tosa_rfft_struct_outputs_graph()
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     rfft = next(
         operation
         for operation in graph.operations
@@ -1341,7 +1383,7 @@ def test_composite_extract_selector_accepts_top_level_struct_member_extract():
     grammar = load_core_grammar()
     module = _module_with_tosa_rfft_struct_outputs_graph()
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     operations_by_id = {
         operation.id: operation for operation in graph.operations
     }
@@ -1358,7 +1400,7 @@ def test_composite_extract_selector_rejects_nested_extracts():
         real_extract_indexes=(0, 0)
     )
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     operations_by_id = {
         operation.id: operation for operation in graph.operations
     }
@@ -1375,7 +1417,7 @@ def test_composite_extract_selector_rejects_type_mismatch():
         real_extract_type_id=21
     )
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     operations_by_id = {
         operation.id: operation for operation in graph.operations
     }
@@ -1392,7 +1434,7 @@ def test_incoming_edges_for_operation_preserves_source_output_ports():
         include_downstream_consumer=True
     )
     model = build_semantic_model(module, grammar)
-    graph = next(iter(model.graphs.values()))
+    graph = next(iter(model.data_graphs.values()))
     consumer = next(
         operation for operation in graph.operations if operation.id == 43
     )
@@ -1579,7 +1621,7 @@ def test_format_type_formats_array_and_runtime_array_types():
         _constant_composite(2, 4, 3, (2,)),
         resolved_value=(4,),
     )
-    tensor_type = TensorArmType(
+    tensor_type = TensorType(
         5,
         "OpTypeTensorARM",
         _type_tensor(3, 5, 1, 2, 3),
@@ -1674,8 +1716,340 @@ def gb_edge(
     )
 
 
-def test_multiple_arm_graphs_create_multiple_model_explorer_graphs():
-    fixture = Path(__file__).with_name("fixtures") / "multi-arm-graphs.spvasm"
+def test_build_spirv_graph_from_bytes_selects_regular_entry_point():
+    fixture = Path(__file__).with_name("fixtures") / "basic-compute.spvasm"
+    assembly = assemble_spirv_text(fixture.read_text(encoding="utf-8"))
+    assert assembly.ok, assembly.diagnostics
+
+    graph = build_spirv_graph_from_bytes(
+        assembly.data,
+        entry_point="main",
+        entry_point_kind="regular",
+        namespace="compute_segment",
+        node_id_prefix="7__",
+    )
+
+    assert graph.id == "compute"
+    assert [node.id for node in graph.nodes] == ["7__compute"]
+    assert graph.nodes[0].namespace == "compute_segment"
+    assert graph.nodes[0].label == "<compute>"
+    attrs = _attrs(graph.nodes[0])
+    assert attrs["entry point"] == "main"
+    assert attrs["execution model"] == "GLCompute"
+    assert attrs["execution mode LocalSize"] == "1 1 1"
+
+
+def test_compute_graph_connects_descriptor_inputs_outputs_and_read_write_resources():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 4 5 6
+OpName %input "input_buffer"
+OpName %output "output_buffer"
+OpName %state "state_buffer"
+OpDecorate %input DescriptorSet 0
+OpDecorate %input Binding 0
+OpDecorate %input NonWritable
+OpDecorate %output DescriptorSet 0
+OpDecorate %output Binding 1
+OpDecorate %output NonReadable
+OpDecorate %state DescriptorSet 0
+OpDecorate %state Binding 2
+OpDecorate %runtime ArrayStride 4
+OpDecorate %buffer Block
+OpMemberDecorate %buffer 0 Offset 0
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%runtime = OpTypeRuntimeArray %uint
+%buffer = OpTypeStruct %runtime
+%ptr_buffer = OpTypePointer StorageBuffer %buffer
+%func_ty = OpTypeFunction %void
+%input = OpVariable %ptr_buffer StorageBuffer
+%output = OpVariable %ptr_buffer StorageBuffer
+%state = OpVariable %ptr_buffer StorageBuffer
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    graph = build_spirv_graph_from_bytes(
+        data, entry_point="main", entry_point_kind="regular"
+    )
+    nodes = {node.id: node for node in graph.nodes}
+    compute = nodes["compute"]
+
+    assert graph.id == "compute"
+    assert [node.label for node in graph.nodes] == [
+        "Input input_buffer",
+        "Output output_buffer",
+        "Input/Output state_buffer",
+        "<compute>",
+    ]
+    input_node = _node_by_label(graph, "Input input_buffer")
+    output_node = _node_by_label(graph, "Output output_buffer")
+    state_node = _node_by_label(graph, "Input/Output state_buffer")
+
+    assert _edge_sources(compute) == [
+        (input_node.id, "0", "0"),
+        (state_node.id, "0", "1"),
+    ]
+    assert _edge_sources(output_node) == [("compute", "0", "0")]
+    assert _edge_sources(state_node) == [("compute", "1", "0")]
+    assert _attrs(compute)["execution mode LocalSize"] == "4 5 6"
+
+
+def test_compute_graph_uses_binding_only_descriptor_as_set_zero():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpName %input "input"
+OpDecorate %input Binding 3
+OpDecorate %input NonWritable
+OpDecorate %runtime ArrayStride 4
+OpDecorate %buffer Block
+OpMemberDecorate %buffer 0 Offset 0
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%uint_0 = OpConstant %uint 0
+%runtime = OpTypeRuntimeArray %uint
+%buffer = OpTypeStruct %runtime
+%ptr_buffer = OpTypePointer StorageBuffer %buffer
+%ptr_uint = OpTypePointer StorageBuffer %uint
+%func_ty = OpTypeFunction %void
+%input = OpVariable %ptr_buffer StorageBuffer
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+%element = OpAccessChain %ptr_uint %input %uint_0 %uint_0
+%load = OpLoad %uint %element
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    graph = build_spirv_graph_from_bytes(
+        data, entry_point="main", entry_point_kind="regular"
+    )
+
+    assert [node.label for node in graph.nodes] == ["Input input", "<compute>"]
+    assert _attrs(graph.nodes[0])["descriptor"] == "set 0, binding 3"
+
+
+def test_compute_graph_filters_resources_by_reachable_function_body():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 200
+; Schema: 0
+OpCapability Shader
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main_a "main_a"
+OpEntryPoint GLCompute %main_b "main_b"
+OpName %input_a "input_a"
+OpName %input_b "input_b"
+OpDecorate %input_a DescriptorSet 0
+OpDecorate %input_a Binding 0
+OpDecorate %input_a NonWritable
+OpDecorate %input_b DescriptorSet 0
+OpDecorate %input_b Binding 1
+OpDecorate %input_b NonWritable
+OpDecorate %runtime ArrayStride 4
+OpDecorate %buffer Block
+OpMemberDecorate %buffer 0 Offset 0
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%uint_0 = OpConstant %uint 0
+%runtime = OpTypeRuntimeArray %uint
+%buffer = OpTypeStruct %runtime
+%ptr_buffer = OpTypePointer StorageBuffer %buffer
+%ptr_uint = OpTypePointer StorageBuffer %uint
+%func_ty = OpTypeFunction %void
+%input_a = OpVariable %ptr_buffer StorageBuffer
+%input_b = OpVariable %ptr_buffer StorageBuffer
+%main_a = OpFunction %void None %func_ty
+%label_a = OpLabel
+%call_a = OpFunctionCall %void %helper_a
+OpReturn
+OpFunctionEnd
+%helper_a = OpFunction %void None %func_ty
+%label_helper_a = OpLabel
+%element_a = OpAccessChain %ptr_uint %input_a %uint_0 %uint_0
+%load_a = OpLoad %uint %element_a
+OpReturn
+OpFunctionEnd
+%main_b = OpFunction %void None %func_ty
+%label_b = OpLabel
+%element_b = OpAccessChain %ptr_uint %input_b %uint_0 %uint_0
+%load_b = OpLoad %uint %element_b
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    graph_a = build_spirv_graph_from_bytes(
+        data, entry_point="main_a", entry_point_kind="regular"
+    )
+    graph_b = build_spirv_graph_from_bytes(
+        data, entry_point="main_b", entry_point_kind="regular"
+    )
+
+    assert [node.label for node in graph_a.nodes] == [
+        "Input input_a",
+        "<compute>",
+    ]
+    assert [node.label for node in graph_b.nodes] == [
+        "Input input_b",
+        "<compute>",
+    ]
+
+
+def test_compute_graph_renders_execution_mode_id_metadata():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.2
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionModeId %main LocalSizeId %local_x %local_y %local_z
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%local_x = OpSpecConstant %uint 4
+%local_y = OpSpecConstant %uint 5
+%local_z = OpSpecConstant %uint 6
+%func_ty = OpTypeFunction %void
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+OpReturn
+OpFunctionEnd
+""",
+        target_env="universal_1_2",
+    )
+
+    graph = build_spirv_graph_from_bytes(
+        data, entry_point="main", entry_point_kind="regular"
+    )
+
+    assert _attrs(graph.nodes[-1])["execution mode LocalSizeId"] == "2 3 4"
+
+
+def test_graph_collection_preserves_entry_points_with_same_function():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "first"
+OpEntryPoint GLCompute %main "second"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%func_ty = OpTypeFunction %void
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    graphs = build_spirv_graphs_from_bytes(data)
+
+    assert [graph.id for graph in graphs] == [
+        "compute_first_1",
+        "compute_second_1",
+    ]
+    assert [_attrs(graph.nodes[-1])["entry point"] for graph in graphs] == [
+        "first",
+        "second",
+    ]
+
+
+def test_named_entry_point_defaults_to_data_graph_for_overlapping_names():
+    data = assemble_spirv_text(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 100
+; Schema: 0
+OpCapability Shader
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability Int8
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpGraphEntryPointARM %graph "main" %input_ptr %output_ptr
+%void = OpTypeVoid
+%func_ty = OpTypeFunction %void
+%uint = OpTypeInt 32 0
+%uint8 = OpTypeInt 8 0
+%uint_0 = OpConstant %uint 0
+%uint_1 = OpConstant %uint 1
+%shape_type = OpTypeArray %uint %uint_1
+%shape = OpConstantComposite %shape_type %uint_1
+%tensor = OpTypeTensorARM %uint8 %uint_1 %shape
+%ptr_tensor = OpTypePointer UniformConstant %tensor
+%graph_type = OpTypeGraphARM 1 %tensor %tensor
+%input_ptr = OpVariable %ptr_tensor UniformConstant
+%output_ptr = OpVariable %ptr_tensor UniformConstant
+%graph = OpGraphARM %graph_type
+%graph_input = OpGraphInputARM %tensor %uint_0
+OpGraphSetOutputARM %graph_input %uint_0
+OpGraphEndARM
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+OpReturn
+OpFunctionEnd
+"""
+    )
+    assert data.ok, data.diagnostics
+
+    default_graph = build_spirv_graph_from_bytes(data.data, entry_point="main")
+    regular_graph = build_spirv_graph_from_bytes(
+        data.data, entry_point="main", entry_point_kind="regular"
+    )
+    data_graph_graph = build_spirv_graph_from_bytes(
+        data.data, entry_point="main", entry_point_kind="graph"
+    )
+
+    assert regular_graph.id == "compute"
+    assert [node.label for node in regular_graph.nodes] == ["<compute>"]
+    assert default_graph.id.startswith("graph_")
+    assert data_graph_graph.id.startswith("graph_")
+    assert [node.label for node in default_graph.nodes] == [
+        "Input 0",
+        "Output 0",
+    ]
+    assert [node.label for node in data_graph_graph.nodes] == [
+        "Input 0",
+        "Output 0",
+    ]
+
+
+def test_multiple_data_graphs_create_multiple_model_explorer_graphs():
+    fixture = Path(__file__).with_name("fixtures") / "multi-data-graphs.spvasm"
     assembly = assemble_spirv_text(fixture.read_text(encoding="utf-8"))
     assert assembly.ok, assembly.diagnostics
 
@@ -1684,9 +2058,11 @@ def test_multiple_arm_graphs_create_multiple_model_explorer_graphs():
     assert [graph.id for graph in graphs] == [
         "graph_11",
         "graph_12",
+        "compute_compute_first_60",
+        "compute_compute_second_61",
     ]
     assert [
-        graph.groupNodeAttributes[""]["entry_points"] for graph in graphs
+        graph.groupNodeAttributes[""]["entry_points"] for graph in graphs[:2]
     ] == ["first, first_alt", "second, second_alt"]
 
     first_input, first_output = graphs[0].nodes
@@ -1768,3 +2144,106 @@ def test_multiple_arm_graphs_create_multiple_model_explorer_graphs():
         "descriptor (second_alt)": "set 8, binding 22",
         "spv value id": "%31",
     }
+
+    # The compute graphs include every descriptor-decorated global, including
+    # globals also used by the DataGraphs. We do not yet analyze the compute
+    # function body to determine which globals each entry point actually uses,
+    # so the conservative display includes them all.
+    assert [node.label for node in graphs[2].nodes] == [
+        "Input/Output %2",
+        "Input/Output %3",
+        "Input/Output %8",
+        "Input/Output %9",
+        "Input compute_input",
+        "Output compute_output",
+        "Input/Output compute_state",
+        "Input/Output %4",
+        "Input/Output %5",
+        "Input/Output %13",
+        "Input/Output %14",
+        "<compute>",
+    ]
+    compute_first = graphs[2].nodes[-1]
+    assert _attrs(compute_first)["entry point"] == "compute_first"
+    assert _attrs(compute_first)["execution mode LocalSize"] == "1 2 3"
+    assert _edge_sources(compute_first) == [
+        ("resource_2", "0", "0"),
+        ("resource_3", "0", "1"),
+        ("resource_8", "0", "2"),
+        ("resource_9", "0", "3"),
+        ("resource_50", "0", "4"),
+        ("resource_52", "0", "5"),
+        ("resource_4", "0", "6"),
+        ("resource_5", "0", "7"),
+        ("resource_13", "0", "8"),
+        ("resource_14", "0", "9"),
+    ]
+
+    assert [node.label for node in graphs[3].nodes] == [
+        *[node.label for node in graphs[2].nodes[:-1]],
+        "<compute>",
+    ]
+    compute_second = graphs[3].nodes[-1]
+    assert _attrs(compute_second)["entry point"] == "compute_second"
+    assert _attrs(compute_second)["execution mode LocalSize"] == "4 5 6"
+    assert _edge_sources(compute_second) == _edge_sources(compute_first)
+
+
+def test_regular_entry_point_requires_compute_execution_model():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 10
+; Schema: 0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+%void = OpTypeVoid
+%func_ty = OpTypeFunction %void
+%main = OpFunction %void None %func_ty
+%label = OpLabel
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match="Unsupported OpEntryPoint execution model 'Vertex'"
+    ):
+        build_spirv_graph_from_bytes(
+            data, entry_point="main", entry_point_kind="regular"
+        )
+
+
+def test_graph_collection_ignores_non_compute_regular_entry_points():
+    data = assemble_valid_spirv(
+        """
+; SPIR-V
+; Version: 1.0
+; Bound: 20
+; Schema: 0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %vertex_main "vertex_main"
+OpEntryPoint GLCompute %compute_main "compute_main"
+OpExecutionMode %compute_main LocalSize 1 1 1
+%void = OpTypeVoid
+%func_ty = OpTypeFunction %void
+%vertex_main = OpFunction %void None %func_ty
+%vertex_label = OpLabel
+OpReturn
+OpFunctionEnd
+%compute_main = OpFunction %void None %func_ty
+%compute_label = OpLabel
+OpReturn
+OpFunctionEnd
+"""
+    )
+
+    graphs = build_spirv_graphs_from_bytes(data)
+
+    assert [graph.id for graph in graphs] == ["compute_compute_main_2"]
+    assert _attrs(graphs[0].nodes[-1])["entry point"] == "compute_main"

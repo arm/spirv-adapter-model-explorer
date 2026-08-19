@@ -13,7 +13,7 @@ from .formatting import (
     INTEGER_INTERPRETATION_UNSIGNED,
     IntegerInterpretation,
 )
-from .spirv.types import GraphArmOperation, SpirvModuleModel, StructType
+from .spirv.types import DataGraphOperation, SpirvModuleModel, StructType
 
 TOSA_EXT_INST_SET = "TOSA.001000.1"
 TOSA_EXT_INST_SET_RE = re.compile(r"^TOSA\.(\d{6})\.(\d+)$")
@@ -40,7 +40,7 @@ def tosa_spec_url(instruction_set: str, opname: str) -> str | None:
 
 
 def operation_tosa_spec_attr(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
 ) -> gb.KeyValue | None:
     if operation.ext_inst_set_name is None:
         return None
@@ -56,7 +56,7 @@ def operation_tosa_spec_attr(
 
 
 def operation_output_tags(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
 ) -> tuple[str | None, ...]:
     output_count = (
         len(operation.type.member_types)
@@ -71,7 +71,7 @@ def operation_output_tags(
 
 
 def constant_operand_integer_interpretation(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
     operand_index: int,
     model: SpirvModuleModel,
 ) -> IntegerInterpretation:
@@ -99,7 +99,7 @@ def constant_operand_integer_interpretation(
 
 
 def rescale_unsigned_flag_interpretation(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
     model: SpirvModuleModel,
     flag_name: str,
 ) -> IntegerInterpretation:
@@ -115,7 +115,7 @@ def rescale_unsigned_flag_interpretation(
 
 
 def operation_constant_operand_value(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
     model: SpirvModuleModel,
     operand_name: str,
 ) -> object:
@@ -133,7 +133,7 @@ def operation_constant_operand_value(
 
 
 def operation_operand_name(
-    operation: GraphArmOperation, operand_index: int
+    operation: DataGraphOperation, operand_index: int
 ) -> str | None:
     if operation.ext_inst_spec is None:
         return None
@@ -143,7 +143,7 @@ def operation_operand_name(
 
 
 def operation_input_tags(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
 ) -> tuple[str | None, ...]:
     operand_specs = (
         operation.ext_inst_spec.operands

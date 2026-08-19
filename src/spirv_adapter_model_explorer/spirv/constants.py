@@ -16,7 +16,7 @@ from .types import (
     ScalarType,
     SpirvModuleModel,
     StructType,
-    TensorArmType,
+    TensorType,
     Type,
     VectorType,
     _operand_value,
@@ -206,7 +206,7 @@ def _resolve_null_constant_value(type_model: Type | None, resolve) -> Any:
             _resolve_null_constant_value(member_type, resolve)
             for member_type in type_model.member_types
         )
-    if isinstance(type_model, TensorArmType):
+    if isinstance(type_model, TensorType):
         shape = type_model.shape
         count = (
             _tensor_element_count(resolve(shape))
@@ -257,7 +257,7 @@ def _composite_element_count(type_model: Type | None, resolve) -> int | None:
                 return length_value
     if isinstance(type_model, StructType):
         return len(type_model.member_type_ids)
-    if isinstance(type_model, TensorArmType):
+    if isinstance(type_model, TensorType):
         shape = type_model.shape
         if shape is not None:
             return _tensor_element_count(resolve(shape))

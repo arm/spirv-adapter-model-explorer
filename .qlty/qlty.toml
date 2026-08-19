@@ -22,6 +22,7 @@ exclude_patterns = [
   "**/seed/**",
   "**/target/**",
   "**/templates/**",
+  "**/tests/**",
   "**/testdata/**",
   "**/vendor/**",
   "**/executorch_flatbuffer/**",

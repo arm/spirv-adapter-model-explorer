@@ -10,14 +10,14 @@ from model_explorer import graph_builder as gb
 from .spirv.types import (
     ArrayType,
     Constant,
+    DataGraphType,
     Definition,
-    GraphArmType,
     MatrixType,
     RuntimeArrayType,
     ScalarType,
     SpirvModuleModel,
     StructType,
-    TensorArmType,
+    TensorType,
     Type,
     VectorType,
 )
@@ -55,18 +55,18 @@ def definition_type(
 
 
 def tensor_shape_metadata_value(type_model: Type | None) -> str | None:
-    if not isinstance(type_model, TensorArmType):
+    if not isinstance(type_model, TensorType):
         return None
     return format_tensor_type(type_model)
 
 
-def format_tensor_type(type_model: TensorArmType) -> str:
+def format_tensor_type(type_model: TensorType) -> str:
     dimensions = tensor_shape_dimensions(type_model)
     element_type = format_element_type(type_model.element_type)
     return f"{element_type}[{', '.join(dimensions)}]"
 
 
-def tensor_shape_dimensions(type_model: TensorArmType) -> tuple[str, ...]:
+def tensor_shape_dimensions(type_model: TensorType) -> tuple[str, ...]:
     if type_model.shape is None:
         rank = format_constant_value(type_model.rank)
         return (
@@ -78,7 +78,7 @@ def tensor_shape_dimensions(type_model: TensorArmType) -> tuple[str, ...]:
     return (str(value),)
 
 
-def format_tensor_shape(type_model: TensorArmType) -> str:
+def format_tensor_shape(type_model: TensorType) -> str:
     return "[" + ", ".join(tensor_shape_dimensions(type_model)) + "]"
 
 
@@ -114,7 +114,7 @@ def format_integer_type_prefix(
 
 
 def tensor_attrs(type_model: Type | None) -> list[gb.KeyValue]:
-    if not isinstance(type_model, TensorArmType):
+    if not isinstance(type_model, TensorType):
         return []
     return [
         gb.KeyValue(
@@ -169,11 +169,11 @@ def format_type(
         return ""
     if isinstance(type_model, ScalarType):
         return format_element_type(type_model)
-    if isinstance(type_model, TensorArmType):
+    if isinstance(type_model, TensorType):
         if model is None:
             return "tensor"
         return tensor_shape_metadata_value(type_model) or "tensor"
-    if isinstance(type_model, GraphArmType):
+    if isinstance(type_model, DataGraphType):
         inputs = ", ".join(
             format_type(input_type, model)
             for input_type in type_model.input_types
@@ -207,7 +207,7 @@ def format_constant_operand_value(
 ) -> str:
     value = constant_display_value(constant, model, integer_interpretation)
     type_model = constant.type
-    if isinstance(type_model, TensorArmType):
+    if isinstance(type_model, TensorType):
         return format_tensor_constant_value(
             value, type_model, integer_interpretation=integer_interpretation
         )
@@ -253,7 +253,7 @@ def constant_display_value(
     if integer_interpretation == INTEGER_INTERPRETATION_TYPE:
         return constant.resolved_value
     type_model = constant.type
-    if isinstance(type_model, TensorArmType):
+    if isinstance(type_model, TensorType):
         return reinterpret_tensor_constant_value(
             constant, type_model, model, integer_interpretation
         )
@@ -266,7 +266,7 @@ def constant_display_value(
 
 def reinterpret_tensor_constant_value(
     constant: Constant,
-    type_model: TensorArmType,
+    type_model: TensorType,
     model: SpirvModuleModel,
     integer_interpretation: IntegerInterpretation,
 ) -> object:
@@ -343,7 +343,7 @@ def decode_integer_constant_value(
 
 def format_tensor_constant_value(
     value: object,
-    type_model: TensorArmType,
+    type_model: TensorType,
     *,
     integer_interpretation: IntegerInterpretation = INTEGER_INTERPRETATION_TYPE,
 ) -> str:

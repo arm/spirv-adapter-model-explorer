@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+
 ; SPIR-V
 ; Version: 1.0
 ; Bound: 100
@@ -34,6 +37,7 @@ OpDecorate %input_array_ptr Binding 0
 OpDecorate %output_array_ptr DescriptorSet 0
 OpDecorate %output_array_ptr Binding 1
 
+%void = OpTypeVoid
 %uint = OpTypeInt 32 0
 %uint8 = OpTypeInt 8 0
 %uint_0 = OpConstant %uint 0
@@ -56,15 +60,15 @@ OpGraphEntryPointARM %graph "main" %input_array_ptr %output_array_ptr
 %add0 = OpExtInst %tensor %tosa ADD %input0 %input1
 %add1 = OpExtInst %tensor %tosa ADD %add0 %input1
 %add2 = OpExtInst %tensor %tosa ADD %add1 %input0
-%debug_graph = OpExtInst %uint %debug 1 %graph %graph_debug_name
-%debug_input0 = OpExtInst %uint %debug 3 %input0 %input0_debug_name
-%debug_input1 = OpExtInst %uint %debug 3 %input1 %input1_debug_name
-%debug_add0 = OpExtInst %uint %debug 2 %debug_graph %add0_debug_name %add0
-%debug_add1 = OpExtInst %uint %debug 2 %debug_graph %add1_debug_name %add1
-%debug_add2 = OpExtInst %uint %debug 2 %debug_graph %add2_debug_name %add2
-%debug_add0_output = OpExtInst %uint %debug 3 %add0 %add0_output_debug_name %uint_0
-%debug_add1_output = OpExtInst %uint %debug 3 %add1 %add1_output_debug_name %uint_0
-%debug_add2_output = OpExtInst %uint %debug 3 %add2 %add2_output_debug_name %uint_0
+%debug_graph = OpExtInst %void %debug 1 %graph %graph_debug_name
+%debug_input0 = OpExtInst %void %debug 3 %input0 %input0_debug_name
+%debug_input1 = OpExtInst %void %debug 3 %input1 %input1_debug_name
+%debug_add0 = OpExtInst %void %debug 2 %debug_graph %add0_debug_name %add0
+%debug_add1 = OpExtInst %void %debug 2 %debug_graph %add1_debug_name %add1
+%debug_add2 = OpExtInst %void %debug 2 %debug_graph %add2_debug_name %add2
+%debug_add0_output = OpExtInst %void %debug 3 %add0 %add0_output_debug_name
+%debug_add1_output = OpExtInst %void %debug 3 %add1 %add1_output_debug_name
+%debug_add2_output = OpExtInst %void %debug 3 %add2 %add2_output_debug_name
 OpGraphSetOutputARM %input0 %uint_0 %uint_0
 OpGraphSetOutputARM %add2 %uint_0 %uint_1
 OpGraphEndARM

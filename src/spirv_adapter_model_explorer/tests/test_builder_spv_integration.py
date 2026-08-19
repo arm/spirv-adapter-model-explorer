@@ -11,7 +11,7 @@ from spirv_adapter_model_explorer.builder import (
 from .conftest import fixture_text
 from .test_spirv_parser import assemble_valid_spirv
 
-MULTI_INPUT_OUTPUT_GRAPH_ASM = fixture_text("arm-tosa-two-adds.spvasm")
+MULTI_INPUT_OUTPUT_GRAPH_ASM = fixture_text("data-graph-tosa-two-adds.spvasm")
 
 
 TENSOR_ARRAY_INTERFACE_GRAPH_ASM = fixture_text(
@@ -25,6 +25,9 @@ TENSOR_ARRAY_SPARSE_INTERFACE_GRAPH_ASM = fixture_text(
 
 
 CONV2D_GRAPH_ASM = fixture_text("conv2d.spvasm")
+
+
+CONV2D_GRAPH_CONSTANTS_ASM = fixture_text("conv2d-graph-constants.spvasm")
 
 
 RFFT_STRUCT_OUTPUT_GRAPH_ASM = fixture_text("rfft-struct-output.spvasm")
@@ -201,6 +204,7 @@ def test_spv_graph_binary_applies_namespace_and_node_id_prefix():
     graph = build_spirv_graph_from_bytes(
         data,
         entry_point="main",
+        entry_point_kind="graph",
         namespace="0_graph_preprocess",
         node_id_prefix="0__",
     )
@@ -513,6 +517,74 @@ def test_spv_graph_binary_formats_tosa_signless_and_rescale_unsigned_operands(
     assert mixed_attrs["arg5 input"] == "uint32[4294967295]"
     assert mixed_attrs["arg8 input_zp"] == "uint32[4294967295]"
     assert mixed_attrs["arg9 output_zp"] == "int32[-1]"
+
+
+def test_graph_constant_fixture_keeps_attributes_when_nodes_are_hidden():
+    data = assemble_valid_spirv(CONV2D_GRAPH_CONSTANTS_ASM)
+
+    graph = build_spirv_graphs_from_bytes(data)[0]
+    conv = next(node for node in graph.nodes if node.label == "CONV2D")
+    output1 = next(node for node in graph.nodes if node.label == "Output 1")
+
+    assert not any(
+        node.label.startswith("<graph constant") for node in graph.nodes
+    )
+    assert _attrs(conv)["arg6 weight"] == "<graph constant 0> uint8[1]"
+    assert _attrs(conv)["arg7 bias"] == "<graph constant 1> uint8[1]"
+    assert _attrs(output1)["value"] == "<graph constant 0> uint8[1]"
+    assert output1.incomingEdges == []
+
+
+def test_graph_constant_fixture_shows_connected_nodes_without_attributes():
+    data = assemble_valid_spirv(CONV2D_GRAPH_CONSTANTS_ASM)
+
+    graph = build_spirv_graphs_from_bytes(data, show_graph_constants=True)[0]
+    nodes_by_id = {node.id: node for node in graph.nodes}
+    constants = [
+        node
+        for node in graph.nodes
+        if node.label.startswith("<graph constant")
+    ]
+    conv = next(node for node in graph.nodes if node.label == "CONV2D")
+    output1 = next(node for node in graph.nodes if node.label == "Output 1")
+
+    assert [node.label for node in constants] == [
+        "<graph constant 0>",
+        "<graph constant 1>",
+    ]
+    assert "arg6 weight" not in _attrs(conv)
+    assert "arg7 bias" not in _attrs(conv)
+    assert "value" not in _attrs(output1)
+    assert [
+        (nodes_by_id[edge.sourceNodeId].label, edge.targetNodeInputId)
+        for edge in conv.incomingEdges
+    ] == [
+        ("Input 0", "0"),
+        ("Input 1", "1"),
+        ("Input 2", "2"),
+        ("Input 3", "3"),
+        ("Input 4", "4"),
+        ("Input 5", "5"),
+        ("<graph constant 0>", "6"),
+        ("<graph constant 1>", "7"),
+        ("Input 6", "8"),
+        ("Input 7", "9"),
+    ]
+    assert [
+        (nodes_by_id[edge.sourceNodeId].label, edge.targetNodeInputId)
+        for edge in output1.incomingEdges
+    ] == [("<graph constant 0>", "0")]
+    assert _metadata_attrs(conv.inputsMetadata)["6"] == {
+        "__tensor_tag": "weight",
+        "tensor_shape": "uint8[1]",
+    }
+    assert _metadata_attrs(conv.inputsMetadata)["7"] == {
+        "__tensor_tag": "bias",
+        "tensor_shape": "uint8[1]",
+    }
+    assert _metadata_attrs(constants[0].outputsMetadata) == {
+        "0": {"tensor_shape": "uint8[1]"}
+    }
 
 
 def test_tosa_operand_names_populate_input_tensor_tags():

@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from model_explorer import graph_builder as gb
 
 from .assembly import SpirvDisassemblyLine, disassemble_spirv
+from .compute_builder import build_compute_graph
 from .disassembly_metadata import (
     disassembly_attrs,
     graph_group_attrs,
 )
 from .formatting import (
+    INTEGER_INTERPRETATION_TYPE,
+    IntegerInterpretation,
     definition_name_attrs,
     definition_type,
     format_constant_operand_value,
@@ -23,20 +26,18 @@ from .formatting import (
     tensor_attrs,
     tensor_shape_metadata_value,
 )
-from .raw_graph import (
-    build_raw_instruction_graph,
-)
 from .spirv.semantic_model import build_semantic_model
 from .spirv.spirv_grammar import load_core_grammar
 from .spirv.spirv_parser import SpirvModule, parse_spirv
 from .spirv.types import (
     Constant,
+    DataGraph,
+    DataGraphInput,
+    DataGraphOperation,
+    DataGraphOutput,
     Decoration,
     Definition,
-    GraphArm,
-    GraphArmInput,
-    GraphArmOperation,
-    GraphArmOutput,
+    EntryPoint,
     SpirvModuleModel,
     StructType,
     Type,
@@ -53,6 +54,9 @@ from .validation import (
     validate_for_metadata,
 )
 
+EntryPointKind = Literal["graph", "regular"]
+_SUPPORTED_REGULAR_ENTRY_POINT_EXECUTION_MODELS = {"GLCompute"}
+
 
 class _ProducerOutput(NamedTuple):
     node_id: str
@@ -64,6 +68,7 @@ def build_spirv_graphs_from_bytes(
     *,
     namespace: str = "",
     node_id_prefix: str = "",
+    show_graph_constants: bool = False,
 ) -> list[gb.Graph]:
     """Build Model Explorer graphs from SPIR-V bytes."""
     validation_result = validate_for_metadata(data)
@@ -77,6 +82,7 @@ def build_spirv_graphs_from_bytes(
             module=module,
             namespace=namespace,
             node_id_prefix=node_id_prefix,
+            show_graph_constants=show_graph_constants,
             disassembly_text=disassembly.text if disassembly.ok else None,
             disassembly_lines_by_byte_offset=disassembly.lines_by_byte_offset,
         )
@@ -96,10 +102,12 @@ def build_spirv_graph_from_bytes(
     data: bytes,
     *,
     entry_point: str,
+    entry_point_kind: EntryPointKind = "graph",
     namespace: str = "",
     node_id_prefix: str = "",
+    show_graph_constants: bool = False,
 ) -> gb.Graph:
-    """Build the Model Explorer graph for a named GraphARM entry point."""
+    """Build the Model Explorer graph for a named SPIR-V entry point."""
     validation_result = validate_for_metadata(data)
     try:
         grammar = load_core_grammar()
@@ -108,9 +116,12 @@ def build_spirv_graph_from_bytes(
         disassembly = disassemble_spirv(data, show_byte_offset=True)
         graph = build_spirv_graph_from_semantic_model(
             model,
+            module=module,
             entry_point=entry_point,
+            entry_point_kind=entry_point_kind,
             namespace=namespace,
             node_id_prefix=node_id_prefix,
+            show_graph_constants=show_graph_constants,
             disassembly_text=disassembly.text if disassembly.ok else None,
             disassembly_lines_by_byte_offset=disassembly.lines_by_byte_offset,
         )
@@ -127,25 +138,60 @@ def build_spirv_graph_from_semantic_model(
     model: SpirvModuleModel,
     *,
     entry_point: str,
+    entry_point_kind: EntryPointKind = "graph",
+    module: SpirvModule | None = None,
     namespace: str = "",
     node_id_prefix: str = "",
+    show_graph_constants: bool = False,
     disassembly_text: str | None = None,
     disassembly_lines_by_byte_offset: dict[int, SpirvDisassemblyLine]
     | None = None,
 ) -> gb.Graph:
-    """Build a Model Explorer graph for a named GraphARM entry point."""
-    graph = _graph_for_entry_point(model, entry_point)
-    return _namespace_and_prefix_graph(
-        _build_arm_graph(
-            graph,
-            model,
-            entry_point_names=(entry_point,),
-            disassembly_text=disassembly_text,
-            disassembly_lines_by_byte_offset=disassembly_lines_by_byte_offset,
-        ),
-        namespace=namespace,
-        node_id_prefix=node_id_prefix,
+    """Build a Model Explorer graph for a named SPIR-V entry point."""
+    _validate_entry_point_kind(entry_point_kind)
+    data_graph_entry_points = _data_graph_entry_points_for_name(
+        model, entry_point
     )
+    regular_entry_points = _regular_entry_points_for_name(model, entry_point)
+
+    if entry_point_kind == "graph":
+        data_graph = _single_data_graph_entry_point_graph(
+            data_graph_entry_points, entry_point
+        )
+        return _namespace_and_prefix_graph(
+            _build_data_graph_graph(
+                data_graph,
+                model,
+                entry_point_names=(entry_point,),
+                show_graph_constants=show_graph_constants,
+                disassembly_text=disassembly_text,
+                disassembly_lines_by_byte_offset=(
+                    disassembly_lines_by_byte_offset
+                ),
+            ),
+            namespace=namespace,
+            node_id_prefix=node_id_prefix,
+        )
+
+    if entry_point_kind == "regular":
+        regular_entry_point = _single_regular_entry_point(
+            regular_entry_points, entry_point
+        )
+        _validate_supported_regular_entry_point(regular_entry_point)
+        return _namespace_and_prefix_graph(
+            build_compute_graph(
+                model,
+                regular_entry_point,
+                disassembly_text=disassembly_text,
+                disassembly_lines_by_byte_offset=(
+                    disassembly_lines_by_byte_offset
+                ),
+            ),
+            namespace=namespace,
+            node_id_prefix=node_id_prefix,
+        )
+
+    raise ValueError("entry_point_kind must be 'graph' or 'regular'.")
 
 
 def build_spirv_graphs_from_semantic_model(
@@ -154,69 +200,150 @@ def build_spirv_graphs_from_semantic_model(
     module: SpirvModule | None = None,
     namespace: str = "",
     node_id_prefix: str = "",
+    show_graph_constants: bool = False,
     disassembly_text: str | None = None,
     disassembly_lines_by_byte_offset: dict[int, SpirvDisassemblyLine]
     | None = None,
 ) -> list[gb.Graph]:
     """Build Model Explorer graphs from a semantic SPIR-V model."""
-    if model.graphs:
-        graphs = list(model.graphs.values())
-        return [
-            _namespace_and_prefix_graph(
-                _build_arm_graph(
-                    arm_graph,
-                    model,
-                    disassembly_text=disassembly_text,
-                    disassembly_lines_by_byte_offset=disassembly_lines_by_byte_offset,
-                ),
-                namespace=namespace,
-                node_id_prefix=node_id_prefix,
-            )
-            for arm_graph in graphs
-        ]
-
-    if module is None:
-        module = SpirvModule(
-            header=model.header,
-            instructions=model.global_instructions,
-        )
-    return [
+    graphs = [
         _namespace_and_prefix_graph(
-            build_raw_instruction_graph(
-                module,
+            _build_data_graph_graph(
+                data_graph,
+                model,
+                show_graph_constants=show_graph_constants,
                 disassembly_text=disassembly_text,
                 disassembly_lines_by_byte_offset=disassembly_lines_by_byte_offset,
             ),
             namespace=namespace,
             node_id_prefix=node_id_prefix,
         )
+        for data_graph in model.data_graphs.values()
     ]
+    graphs.extend(
+        _namespace_and_prefix_graph(
+            _compute_graph_for_entry_point(
+                model,
+                entry_point,
+                disassembly_text=disassembly_text,
+                disassembly_lines_by_byte_offset=disassembly_lines_by_byte_offset,
+            ),
+            namespace=namespace,
+            node_id_prefix=node_id_prefix,
+        )
+        for entry_point in model.entry_point_declarations
+        if _is_supported_regular_entry_point(entry_point)
+    )
+    if not graphs:
+        raise ValueError(
+            "No OpEntryPoint or OpGraphARM instruction was found."
+        )
+    return graphs
 
 
-def _graph_for_entry_point(
+def _validate_entry_point_kind(entry_point_kind: EntryPointKind) -> None:
+    if entry_point_kind not in {"graph", "regular"}:
+        raise ValueError("entry_point_kind must be 'graph' or 'regular'.")
+
+
+def _data_graph_entry_points_for_name(
     model: SpirvModuleModel, entry_point_name: str
-) -> GraphArm:
-    graph_entry_points = [
+) -> list:
+    return [
         entry_point
-        for entry_point in model.graph_entry_points
+        for entry_point in model.data_graph_entry_points
         if entry_point.name == entry_point_name
     ]
-    if not graph_entry_points:
+
+
+def _regular_entry_points_for_name(
+    model: SpirvModuleModel, entry_point_name: str
+) -> list[EntryPoint]:
+    return [
+        entry_point
+        for entry_point in model.entry_point_declarations
+        if entry_point.name == entry_point_name
+    ]
+
+
+def _single_data_graph_entry_point_graph(
+    data_graph_entry_points: list, entry_point_name: str
+) -> DataGraph:
+    if not data_graph_entry_points:
         raise ValueError(
             f"No OpGraphEntryPointARM named {entry_point_name!r} was found."
         )
-    if len(graph_entry_points) > 1:
+    if len(data_graph_entry_points) > 1:
         raise ValueError(
             "Multiple OpGraphEntryPointARM instructions named "
             f"{entry_point_name!r} were found."
         )
-    graph = graph_entry_points[0].graph
-    if graph is None:
+    data_graph = data_graph_entry_points[0].graph
+    if data_graph is None:
         raise ValueError(
             f"OpGraphEntryPointARM {entry_point_name!r} does not reference a "
             "known OpGraphARM."
         )
+    return data_graph
+
+
+def _single_regular_entry_point(
+    entry_points: list[EntryPoint], entry_point_name: str
+) -> EntryPoint:
+    if not entry_points:
+        raise ValueError(
+            f"No OpEntryPoint named {entry_point_name!r} was found."
+        )
+    if len(entry_points) > 1:
+        execution_models = ", ".join(
+            entry_point.execution_model for entry_point in entry_points
+        )
+        raise ValueError(
+            f"Multiple OpEntryPoint instructions named {entry_point_name!r} "
+            f"were found: {execution_models}."
+        )
+    return entry_points[0]
+
+
+def _is_supported_regular_entry_point(entry_point: EntryPoint) -> bool:
+    return (
+        entry_point.execution_model
+        in _SUPPORTED_REGULAR_ENTRY_POINT_EXECUTION_MODELS
+    )
+
+
+def _validate_supported_regular_entry_point(entry_point: EntryPoint) -> None:
+    if not _is_supported_regular_entry_point(entry_point):
+        supported = ", ".join(
+            sorted(_SUPPORTED_REGULAR_ENTRY_POINT_EXECUTION_MODELS)
+        )
+        raise ValueError(
+            f"Unsupported OpEntryPoint execution model "
+            f"{entry_point.execution_model!r}. Supported regular entry point "
+            f"execution models: {supported}."
+        )
+
+
+def _compute_graph_for_entry_point(
+    model: SpirvModuleModel,
+    entry_point: EntryPoint,
+    *,
+    disassembly_text: str | None = None,
+    disassembly_lines_by_byte_offset: dict[int, SpirvDisassemblyLine]
+    | None = None,
+) -> gb.Graph:
+    graph = build_compute_graph(
+        model,
+        entry_point,
+        disassembly_text=disassembly_text,
+        disassembly_lines_by_byte_offset=disassembly_lines_by_byte_offset,
+    )
+    graph.id = _compute_graph_id(entry_point, model)
     return graph
+
+
+def _compute_graph_id(entry_point: EntryPoint, model: SpirvModuleModel) -> str:
+    return f"compute_{entry_point.name}_{entry_point.id}"
 
 
 def _namespace_and_prefix_graph(
@@ -244,24 +371,25 @@ def _namespace_and_prefix_graph(
     return graph
 
 
-def _build_arm_graph(
-    graph: GraphArm,
+def _build_data_graph_graph(
+    data_graph: DataGraph,
     model: SpirvModuleModel,
     *,
     entry_point_names: tuple[str, ...] | None = None,
+    show_graph_constants: bool = False,
     disassembly_text: str | None = None,
     disassembly_lines_by_byte_offset: dict[int, SpirvDisassemblyLine]
     | None = None,
 ) -> gb.Graph:
     producer_outputs: dict[int, _ProducerOutput] = {}
     operations_by_id = {
-        operation.id: operation for operation in graph.operations
+        operation.id: operation for operation in data_graph.operations
     }
     nodes: list[gb.GraphNode] = []
 
-    for graph_input in graph.inputs:
-        node = _graph_input_node(
-            graph,
+    for graph_input in data_graph.inputs:
+        node = _data_graph_input_node(
+            data_graph,
             graph_input,
             model,
             entry_point_names=entry_point_names,
@@ -270,7 +398,21 @@ def _build_arm_graph(
         nodes.append(node)
         producer_outputs[graph_input.id] = _ProducerOutput(node.id)
 
-    for operation in graph.operations:
+    if show_graph_constants:
+        for definition in _referenced_graph_constant_definitions(
+            data_graph, model
+        ):
+            node = _data_graph_constant_node(
+                definition,
+                model,
+                disassembly_lines_by_byte_offset=(
+                    disassembly_lines_by_byte_offset
+                ),
+            )
+            nodes.append(node)
+            producer_outputs[definition.id] = _ProducerOutput(node.id)
+
+    for operation in data_graph.operations:
         selector = _composite_extract_selector(operation, operations_by_id)
         if selector is not None:
             source_id, output_id = selector
@@ -281,8 +423,8 @@ def _build_arm_graph(
                 )
                 continue
 
-        node = _graph_operation_node(
-            graph,
+        node = _data_graph_operation_node(
+            data_graph,
             operation,
             producer_outputs,
             model,
@@ -291,10 +433,10 @@ def _build_arm_graph(
         nodes.append(node)
         producer_outputs[operation.id] = _ProducerOutput(node.id)
 
-    for output in graph.outputs:
+    for output in data_graph.outputs:
         nodes.append(
-            _graph_output_node(
-                graph,
+            _data_graph_output_node(
+                data_graph,
                 output,
                 producer_outputs,
                 model,
@@ -304,29 +446,29 @@ def _build_arm_graph(
         )
 
     group_attrs = {
-        "graph type": format_type(graph.type, model),
+        "graph type": format_type(data_graph.type, model),
         "entry_points": ", ".join(
-            entry_point.name for entry_point in graph.entry_points
+            entry_point.name for entry_point in data_graph.entry_points
         ),
-        "spv graph id": format_id(graph.id),
-        "spv graph type id": format_id(graph.type_id),
+        "spv graph id": format_id(data_graph.id),
+        "spv graph type id": format_id(data_graph.type_id),
     }
-    if graph.debug_info:
-        group_attrs["debug info"] = _format_debug_info(graph.debug_info)
+    if data_graph.debug_info:
+        group_attrs["debug info"] = _format_debug_info(data_graph.debug_info)
     return gb.Graph(
-        id=_graph_id(graph),
+        id=_data_graph_graph_id(data_graph),
         nodes=nodes,
         groupNodeAttributes=graph_group_attrs(group_attrs, disassembly_text),
     )
 
 
-def _graph_id(graph: GraphArm) -> str:
-    return f"graph_{graph.id}"
+def _data_graph_graph_id(data_graph: DataGraph) -> str:
+    return f"graph_{data_graph.id}"
 
 
-def _graph_input_node(
-    graph: GraphArm,
-    graph_input: GraphArmInput,
+def _data_graph_input_node(
+    data_graph: DataGraph,
+    graph_input: DataGraphInput,
     model: SpirvModuleModel,
     *,
     entry_point_names: tuple[str, ...] | None = None,
@@ -349,8 +491,8 @@ def _graph_input_node(
     )
     attrs.extend(
         _descriptor_attrs(
-            _graph_input_interface_descriptors(
-                graph, graph_input, model, entry_point_names
+            _data_graph_input_interface_descriptors(
+                data_graph, graph_input, model, entry_point_names
             )
         )
     )
@@ -378,9 +520,55 @@ def _graph_input_node(
     )
 
 
-def _graph_operation_node(
-    graph: GraphArm,
-    operation: GraphArmOperation,
+def _referenced_graph_constant_definitions(
+    data_graph: DataGraph, model: SpirvModuleModel
+) -> tuple[Definition, ...]:
+    referenced_ids = {
+        operand_id
+        for operation in data_graph.operations
+        for operand_id in operation.operand_ids
+    }
+    referenced_ids.update(output.value_id for output in data_graph.outputs)
+    return tuple(
+        definition
+        for value_id, definition in model.definitions.items()
+        if value_id in referenced_ids
+        and _graph_constant_index(definition) is not None
+    )
+
+
+def _data_graph_constant_node(
+    definition: Definition,
+    model: SpirvModuleModel,
+    *,
+    disassembly_lines_by_byte_offset: dict[int, SpirvDisassemblyLine]
+    | None = None,
+) -> gb.GraphNode:
+    graph_constant_index = _graph_constant_index(definition)
+    assert graph_constant_index is not None
+    type_model = definition_type(definition, model)
+    attrs = [
+        gb.KeyValue(key="graph constant idx", value=graph_constant_index),
+        gb.KeyValue(key="type", value=format_type(type_model, model)),
+        *tensor_attrs(type_model),
+        *definition_name_attrs("name", definition.id, definition, model),
+        gb.KeyValue(key="spv id", value=format_id(definition.id)),
+        gb.KeyValue(key="spv type id", value=format_id(definition.type_id)),
+        *disassembly_attrs(
+            definition.instruction, disassembly_lines_by_byte_offset
+        ),
+    ]
+    return gb.GraphNode(
+        id=_graph_constant_node_id(definition),
+        label=f"<graph constant {graph_constant_index}>",
+        attrs=attrs,
+        outputsMetadata=_port_metadata((type_model,)),
+    )
+
+
+def _data_graph_operation_node(
+    data_graph: DataGraph,
+    operation: DataGraphOperation,
     producer_outputs: dict[int, _ProducerOutput],
     model: SpirvModuleModel,
     *,
@@ -440,7 +628,9 @@ def _graph_operation_node(
                 for operand_id in operation.operand_ids
             ),
             tags=operation_input_tags(operation),
-            debug_info=_operation_input_debug_info(operation, graph),
+            debug_info=_data_graph_operation_input_debug_info(
+                operation, data_graph
+            ),
         ),
         outputsMetadata=_port_metadata(
             _operation_output_types(operation),
@@ -450,9 +640,9 @@ def _graph_operation_node(
     )
 
 
-def _graph_output_node(
-    graph: GraphArm,
-    output: GraphArmOutput,
+def _data_graph_output_node(
+    data_graph: DataGraph,
+    output: DataGraphOutput,
     producer_outputs: dict[int, _ProducerOutput],
     model: SpirvModuleModel,
     *,
@@ -472,8 +662,8 @@ def _graph_output_node(
     )
     attrs.extend(
         _descriptor_attrs(
-            _graph_output_interface_descriptors(
-                graph, output, model, entry_point_names
+            _data_graph_output_interface_descriptors(
+                data_graph, output, model, entry_point_names
             )
         )
     )
@@ -481,7 +671,7 @@ def _graph_output_node(
         _debug_info_attrs(
             _dedupe_debug_info(
                 (
-                    *_graph_value_debug_info(graph, output.value_id),
+                    *_data_graph_value_debug_info(data_graph, output.value_id),
                     *output.debug_info,
                 )
             )
@@ -489,8 +679,12 @@ def _graph_output_node(
     )
     attrs.extend(
         [
-            *definition_name_attrs(
-                "value", output.value_id, output.value, model
+            *_value_source_attrs(
+                "value",
+                output.value_id,
+                output.value,
+                model,
+                include_graph_constant_attr=producer_output is None,
             ),
             gb.KeyValue(key="spv value id", value=format_id(output.value_id)),
             *disassembly_attrs(
@@ -554,11 +748,13 @@ def _dedupe_debug_info(debug_info: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(debug_info))
 
 
-def _graph_value_debug_info(graph: GraphArm, value_id: int) -> tuple[str, ...]:
-    for graph_input in graph.inputs:
+def _data_graph_value_debug_info(
+    data_graph: DataGraph, value_id: int
+) -> tuple[str, ...]:
+    for graph_input in data_graph.inputs:
         if graph_input.id == value_id:
             return graph_input.debug_info
-    for operation in graph.operations:
+    for operation in data_graph.operations:
         if operation.id != value_id:
             continue
         if operation.output_debug_info:
@@ -567,43 +763,43 @@ def _graph_value_debug_info(graph: GraphArm, value_id: int) -> tuple[str, ...]:
     return ()
 
 
-def _graph_input_interface_descriptors(
-    graph: GraphArm,
-    graph_input: GraphArmInput,
+def _data_graph_input_interface_descriptors(
+    data_graph: DataGraph,
+    graph_input: DataGraphInput,
     model: SpirvModuleModel,
     entry_point_names: tuple[str, ...] | None,
 ) -> tuple[tuple[str, str], ...]:
     input_index = _constant_int_value(graph_input.input_index)
     if input_index is None:
         return ()
-    return _entry_point_interface_descriptors(
-        graph, input_index, model, entry_point_names
+    return _data_graph_entry_point_interface_descriptors(
+        data_graph, input_index, model, entry_point_names
     )
 
 
-def _graph_output_interface_descriptors(
-    graph: GraphArm,
-    graph_output: GraphArmOutput,
+def _data_graph_output_interface_descriptors(
+    data_graph: DataGraph,
+    graph_output: DataGraphOutput,
     model: SpirvModuleModel,
     entry_point_names: tuple[str, ...] | None,
 ) -> tuple[tuple[str, str], ...]:
     output_index = _constant_int_value(graph_output.output_index)
-    input_count = _graph_input_count(graph)
+    input_count = _data_graph_input_count(data_graph)
     if output_index is None or input_count is None:
         return ()
-    return _entry_point_interface_descriptors(
-        graph, input_count + output_index, model, entry_point_names
+    return _data_graph_entry_point_interface_descriptors(
+        data_graph, input_count + output_index, model, entry_point_names
     )
 
 
-def _entry_point_interface_descriptors(
-    graph: GraphArm,
+def _data_graph_entry_point_interface_descriptors(
+    data_graph: DataGraph,
     interface_index: int,
     model: SpirvModuleModel,
     entry_point_names: tuple[str, ...] | None,
 ) -> tuple[tuple[str, str], ...]:
     descriptors: list[tuple[str, str]] = []
-    for entry_point in graph.entry_points:
+    for entry_point in data_graph.entry_points:
         if (
             entry_point_names is not None
             and entry_point.name not in entry_point_names
@@ -619,10 +815,10 @@ def _entry_point_interface_descriptors(
     return tuple(descriptors)
 
 
-def _graph_input_count(graph: GraphArm) -> int | None:
-    if graph.type is None:
+def _data_graph_input_count(data_graph: DataGraph) -> int | None:
+    if data_graph.type is None:
         return None
-    return len(graph.type.input_type_ids)
+    return len(data_graph.type.input_type_ids)
 
 
 def _constant_int_value(constant: Constant | None) -> int | None:
@@ -680,7 +876,7 @@ def _incoming_edges_for_producer(
 
 
 def _incoming_edges_for_operation(
-    operation: GraphArmOperation, producer_outputs: dict[int, _ProducerOutput]
+    operation: DataGraphOperation, producer_outputs: dict[int, _ProducerOutput]
 ) -> list[gb.IncomingEdge]:
     incoming_edges: list[gb.IncomingEdge] = []
     for operand_index, operand_id in enumerate(operation.operand_ids):
@@ -693,17 +889,17 @@ def _incoming_edges_for_operation(
     return incoming_edges
 
 
-def _operation_input_debug_info(
-    operation: GraphArmOperation, graph: GraphArm
+def _data_graph_operation_input_debug_info(
+    operation: DataGraphOperation, data_graph: DataGraph
 ) -> tuple[tuple[str, ...], ...]:
     return tuple(
-        _graph_value_debug_info(graph, operand_id)
+        _data_graph_value_debug_info(data_graph, operand_id)
         for operand_id in operation.operand_ids
     )
 
 
 def _operation_output_types(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
 ) -> tuple[Type | None, ...]:
     if isinstance(operation.type, StructType):
         return operation.type.member_types
@@ -711,8 +907,8 @@ def _operation_output_types(
 
 
 def _composite_extract_selector(
-    operation: GraphArmOperation,
-    operations_by_id: dict[int, GraphArmOperation],
+    operation: DataGraphOperation,
+    operations_by_id: dict[int, DataGraphOperation],
 ) -> tuple[int, str] | None:
     if operation.instruction.opname != "OpCompositeExtract":
         return None
@@ -746,7 +942,7 @@ def _literal_operand(display: str) -> int | None:
 
 
 def _operation_operand_attrs(
-    operation: GraphArmOperation,
+    operation: DataGraphOperation,
     model: SpirvModuleModel,
     producer_outputs: dict[int, _ProducerOutput] | None = None,
 ) -> list[gb.KeyValue]:
@@ -761,42 +957,77 @@ def _operation_operand_attrs(
             if index < len(operation.operands)
             else None
         )
-        if isinstance(operand, Definition):
-            graph_constant_attr = _graph_constant_operand_attr(
-                key, operand, model
+        attrs.extend(
+            _value_source_attrs(
+                key,
+                operand_id,
+                operand,
+                model,
+                include_definition_name=(
+                    producer_outputs is None
+                    or operand_id not in producer_outputs
+                ),
+                include_graph_constant_attr=(
+                    producer_outputs is None
+                    or operand_id not in producer_outputs
+                ),
+                integer_interpretation=constant_operand_integer_interpretation(
+                    operation, index, model
+                ),
             )
-            if graph_constant_attr is not None:
-                attrs.append(graph_constant_attr)
-            elif (
-                producer_outputs is None or operand_id not in producer_outputs
-            ):
-                attrs.extend(
-                    definition_name_attrs(key, operand_id, operand, model)
-                )
-        elif operand_id in model.constants:
-            attrs.append(
-                gb.KeyValue(
-                    key=key,
-                    value=format_constant_operand_value(
-                        model.constants[operand_id],
-                        model,
-                        integer_interpretation=constant_operand_integer_interpretation(
-                            operation, index, model
-                        ),
-                    ),
-                )
-            )
+        )
     return attrs
+
+
+def _value_source_attrs(
+    key: str,
+    value_id: int,
+    value: object | None,
+    model: SpirvModuleModel,
+    *,
+    include_definition_name: bool = True,
+    include_graph_constant_attr: bool = True,
+    integer_interpretation: IntegerInterpretation = (
+        INTEGER_INTERPRETATION_TYPE
+    ),
+) -> list[gb.KeyValue]:
+    if isinstance(value, Definition):
+        graph_constant_attr = _graph_constant_operand_attr(key, value, model)
+        if graph_constant_attr is not None:
+            return [graph_constant_attr] if include_graph_constant_attr else []
+
+    constant = model.constants.get(value_id)
+    if constant is not None:
+        return [
+            gb.KeyValue(
+                key=key,
+                value=format_constant_operand_value(
+                    constant,
+                    model,
+                    integer_interpretation=integer_interpretation,
+                ),
+            )
+        ]
+
+    if include_definition_name and isinstance(value, Definition):
+        return definition_name_attrs(key, value_id, value, model)
+    return []
+
+
+def _graph_constant_index(definition: Definition) -> str | None:
+    if definition.instruction.opname != "OpGraphConstantARM":
+        return None
+    if len(definition.instruction.operands) < 3:
+        return None
+    return definition.instruction.operands[2].display
 
 
 def _graph_constant_operand_attr(
     key: str, definition: Definition, model: SpirvModuleModel
 ) -> gb.KeyValue | None:
-    if definition.instruction.opname != "OpGraphConstantARM":
+    graph_constant_id = _graph_constant_index(definition)
+    if graph_constant_id is None:
         return None
-    if len(definition.instruction.operands) < 3:
-        return None
-    graph_constant_id = definition.instruction.operands[2].display
     value = f"<graph constant {graph_constant_id}>"
     type_model = definition_type(definition, model)
     formatted_type = format_type(type_model, model)
@@ -829,7 +1060,7 @@ def _port_metadata(
     return metadata
 
 
-def _input_node_id(graph_input: GraphArmInput) -> str:
+def _input_node_id(graph_input: DataGraphInput) -> str:
     return _indexed_node_id(
         "input",
         graph_input.input_index,
@@ -839,11 +1070,15 @@ def _input_node_id(graph_input: GraphArmInput) -> str:
     )
 
 
-def _operation_node_id(operation: GraphArmOperation) -> str:
+def _operation_node_id(operation: DataGraphOperation) -> str:
     return f"op_{operation.id}"
 
 
-def _output_node_id(output: GraphArmOutput) -> str:
+def _graph_constant_node_id(definition: Definition) -> str:
+    return f"graph_constant_{definition.id}"
+
+
+def _output_node_id(output: DataGraphOutput) -> str:
     return _indexed_node_id(
         "output",
         output.output_index,
@@ -876,6 +1111,7 @@ def _node_id_index_part(index: Constant | None, index_id: int | None) -> str:
 
 
 __all__ = [
+    "EntryPointKind",
     "build_spirv_graph_from_bytes",
     "build_spirv_graph_from_semantic_model",
     "build_spirv_graphs_from_bytes",

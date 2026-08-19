@@ -23,18 +23,18 @@ from spirv_adapter_model_explorer.spirv.spirv_parser import (
 from spirv_adapter_model_explorer.spirv.types import (
     ArrayType,
     Constant,
+    DataGraph,
+    DataGraphEntryPoint,
+    DataGraphInput,
+    DataGraphOperation,
+    DataGraphOutput,
+    DataGraphType,
     FunctionType,
-    GraphArm,
-    GraphArmEntryPoint,
-    GraphArmInput,
-    GraphArmOperation,
-    GraphArmOutput,
-    GraphArmType,
     MatrixType,
     PointerType,
     ScalarType,
     StructType,
-    TensorArmType,
+    TensorType,
     VectorType,
 )
 
@@ -209,7 +209,7 @@ def test_collects_types():
 
     tensor_id = _type_id(model, "OpTypeTensorARM")
     tensor = model.types[tensor_id]
-    assert tensor == TensorArmType(
+    assert tensor == TensorType(
         tensor_id,
         "OpTypeTensorARM",
         tensor.instruction,
@@ -224,7 +224,7 @@ def test_collects_types():
 
     graph_id = _type_id(model, "OpTypeGraphARM")
     graph = model.types[graph_id]
-    assert graph == GraphArmType(
+    assert graph == DataGraphType(
         graph_id,
         "OpTypeGraphARM",
         graph.instruction,
@@ -583,7 +583,7 @@ def test_resolve_null_constant_value_uses_type_defaults():
         type=array_type,
         resolved_value=(2, 2),
     )
-    tensor_type = TensorArmType(
+    tensor_type = TensorType(
         11,
         "OpTypeTensorARM",
         instruction,
@@ -695,13 +695,13 @@ def test_resolves_rich_references_for_valid_ids():
     assert variable.type is model.types[variable.type_id]
 
     tensor = model.types[tensor_id]
-    assert isinstance(tensor, TensorArmType)
+    assert isinstance(tensor, TensorType)
     assert tensor.element_type is model.types[int_id]
     assert tensor.rank is model.constants[tensor.rank_id]
     assert tensor.shape is model.constants[tensor.shape_id]
 
     graph = model.types[graph_id]
-    assert isinstance(graph, GraphArmType)
+    assert isinstance(graph, DataGraphType)
     assert graph.input_types == (tensor,)
     assert graph.output_types == (tensor,)
 
@@ -803,14 +803,14 @@ def test_resolved_reference_tuples_preserve_positional_none_alignment():
     assert struct.member_types == (model.types[1], None, model.types[2])
 
     graph = model.types[4]
-    assert isinstance(graph, GraphArmType)
+    assert isinstance(graph, DataGraphType)
     assert graph.input_type_ids == (3, 999)
     assert graph.output_type_ids == (1,)
     assert graph.input_types == (struct, None)
     assert graph.output_types == (model.types[1],)
 
 
-def test_collects_arm_graph_entry_points_and_resolved_interfaces():
+def test_collects_data_graph_entry_points_and_resolved_interfaces():
     module = SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -903,21 +903,21 @@ def test_collects_arm_graph_entry_points_and_resolved_interfaces():
     model = build_semantic_model(module, load_core_grammar())
 
     assert model.entry_points == {}
-    assert len(model.graph_entry_points) == 1
-    entry_point = model.graph_entry_points[0]
-    assert isinstance(entry_point, GraphArmEntryPoint)
+    assert len(model.data_graph_entry_points) == 1
+    entry_point = model.data_graph_entry_points[0]
+    assert isinstance(entry_point, DataGraphEntryPoint)
     assert entry_point.graph_id == 11
     assert entry_point.name == "main"
     assert entry_point.interface_ids == (2, 3)
     assert entry_point.graph_definition is model.definitions[11]
     assert entry_point.graph_definition.kind == "graph"
-    assert entry_point.graph is model.graphs[11]
+    assert entry_point.graph is model.data_graphs[11]
     assert entry_point.graph_type is model.types[10]
-    assert isinstance(entry_point.graph_type, GraphArmType)
+    assert isinstance(entry_point.graph_type, DataGraphType)
     assert entry_point.interfaces == (model.variables[2], model.variables[3])
 
 
-def test_collects_arm_graph_body_inputs_operations_and_outputs():
+def test_collects_data_graph_body_inputs_operations_and_outputs():
     module = SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -1092,8 +1092,8 @@ def test_collects_arm_graph_body_inputs_operations_and_outputs():
 
     model = build_semantic_model(module, load_core_grammar())
 
-    graph = model.graphs[11]
-    assert isinstance(graph, GraphArm)
+    graph = model.data_graphs[11]
+    assert isinstance(graph, DataGraph)
     assert graph.id == 11
     assert graph.type_id == 10
     assert graph.type is model.types[10]
@@ -1105,7 +1105,7 @@ def test_collects_arm_graph_body_inputs_operations_and_outputs():
     ]
 
     assert graph.inputs == (
-        GraphArmInput(
+        DataGraphInput(
             id=30,
             type_id=20,
             input_index_id=6,
@@ -1118,7 +1118,7 @@ def test_collects_arm_graph_body_inputs_operations_and_outputs():
     assert graph.inputs[0].element_index is None
 
     assert graph.operations == (
-        GraphArmOperation(
+        DataGraphOperation(
             id=31,
             type_id=21,
             opcode_name="TRANSPOSE_CONV2D",
@@ -1152,7 +1152,7 @@ def test_collects_arm_graph_body_inputs_operations_and_outputs():
     assert graph.operations[0].operands == (model.definitions[30], 1)
 
     assert graph.outputs == (
-        GraphArmOutput(
+        DataGraphOutput(
             value_id=31,
             output_index_id=7,
             instruction=graph.outputs[0].instruction,
@@ -1164,7 +1164,7 @@ def test_collects_arm_graph_body_inputs_operations_and_outputs():
     assert graph.outputs[0].element_index is None
 
 
-def test_collects_arm_graph_input_output_element_indexes():
+def test_collects_data_graph_input_output_element_indexes():
     module = SpirvModule(
         header=SpirvHeader(
             magic=SPIRV_MAGIC,
@@ -1293,7 +1293,7 @@ def test_collects_arm_graph_input_output_element_indexes():
     )
 
     model = build_semantic_model(module, load_core_grammar())
-    graph = model.graphs[11]
+    graph = model.data_graphs[11]
 
     assert graph.inputs[0].element_index_id == 7
     assert graph.inputs[0].element_index is model.constants[7]
@@ -1413,7 +1413,7 @@ def test_graph_operation_ext_inst_decoding_fallbacks():
     )
 
     model = build_semantic_model(module, load_core_grammar())
-    unknown_opcode, unknown_set = model.graphs[11].operations
+    unknown_opcode, unknown_set = model.data_graphs[11].operations
 
     assert unknown_opcode.ext_inst_set_name == "TOSA.001000.1"
     assert unknown_opcode.ext_inst_opcode == 999

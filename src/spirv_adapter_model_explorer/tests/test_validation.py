@@ -11,6 +11,7 @@ from spirv_adapter_model_explorer.native.loader import (
 )
 from spirv_adapter_model_explorer.validation import validate_spirv
 
+from .conftest import FIXTURES_ROOT
 from .test_spirv_parser import assemble_valid_spirv
 
 
@@ -19,6 +20,24 @@ def require_vendored_spirv_tools() -> None:
         spirv_tools_library_path()
     except SpirvToolsUnavailableError as err:
         pytest.skip(str(err))
+
+
+INVALID_FIXTURES = {"semantic-model.spvasm"}
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        fixture
+        for fixture in sorted(FIXTURES_ROOT.glob("*.spvasm"))
+        if fixture.name not in INVALID_FIXTURES
+    ],
+    ids=lambda fixture: fixture.name,
+)
+def test_spvasm_fixture_is_valid(fixture):
+    require_vendored_spirv_tools()
+
+    assemble_valid_spirv(fixture.read_text(encoding="utf-8"))
 
 
 def test_validate_known_good_spirv():

@@ -6,22 +6,22 @@ from __future__ import annotations
 from .spirv_grammar import SpirvGrammar
 from .spirv_parser import SpirvInstruction, SpirvModule
 from .types import (
+    DataGraph,
+    DataGraphEntryPoint,
+    DataGraphInput,
+    DataGraphOperation,
+    DataGraphOutput,
     ExtInstImport,
-    GraphArm,
-    GraphArmEntryPoint,
-    GraphArmInput,
-    GraphArmOperation,
-    GraphArmOutput,
     Id,
     _literal_int,
     _literal_string,
 )
 
 
-def _collect_graph_entry_points(
+def _collect_data_graph_entry_points(
     module: SpirvModule,
-) -> tuple[GraphArmEntryPoint, ...]:
-    entry_points: list[GraphArmEntryPoint] = []
+) -> tuple[DataGraphEntryPoint, ...]:
+    entry_points: list[DataGraphEntryPoint] = []
     for inst in module.instructions:
         if inst.opname != "OpGraphEntryPointARM" or len(inst.operands) < 2:
             continue
@@ -29,7 +29,7 @@ def _collect_graph_entry_points(
         if graph_id is None:
             continue
         entry_points.append(
-            GraphArmEntryPoint(
+            DataGraphEntryPoint(
                 graph_id=graph_id,
                 name=_literal_string(inst.operands[1].display),
                 interface_ids=tuple(
@@ -43,35 +43,40 @@ def _collect_graph_entry_points(
     return tuple(entry_points)
 
 
-def _collect_graphs(
+def _collect_data_graphs(
     module: SpirvModule,
     grammar: SpirvGrammar,
     extended_instruction_imports: dict[Id, ExtInstImport],
-) -> dict[Id, GraphArm]:
-    graphs: dict[Id, GraphArm] = {}
-    current_graph: SpirvInstruction | None = None
+) -> dict[Id, DataGraph]:
+    data_graphs: dict[Id, DataGraph] = {}
+    current_data_graph: SpirvInstruction | None = None
     body_instructions: list[SpirvInstruction] = []
-    inputs: list[GraphArmInput] = []
-    operations: list[GraphArmOperation] = []
-    outputs: list[GraphArmOutput] = []
+    inputs: list[DataGraphInput] = []
+    operations: list[DataGraphOperation] = []
+    outputs: list[DataGraphOutput] = []
 
-    def finish_graph() -> None:
-        nonlocal current_graph, body_instructions, inputs, operations, outputs
+    def finish_data_graph() -> None:
+        nonlocal \
+            current_data_graph, \
+            body_instructions, \
+            inputs, \
+            operations, \
+            outputs
         if (
-            current_graph is not None
-            and current_graph.result_id is not None
-            and current_graph.result_type_id is not None
+            current_data_graph is not None
+            and current_data_graph.result_id is not None
+            and current_data_graph.result_type_id is not None
         ):
-            graphs[current_graph.result_id] = GraphArm(
-                id=current_graph.result_id,
-                type_id=current_graph.result_type_id,
-                instruction=current_graph,
+            data_graphs[current_data_graph.result_id] = DataGraph(
+                id=current_data_graph.result_id,
+                type_id=current_data_graph.result_type_id,
+                instruction=current_data_graph,
                 body_instructions=tuple(body_instructions),
                 inputs=tuple(inputs),
                 operations=tuple(operations),
                 outputs=tuple(outputs),
             )
-        current_graph = None
+        current_data_graph = None
         body_instructions = []
         inputs = []
         operations = []
@@ -79,14 +84,14 @@ def _collect_graphs(
 
     for inst in module.instructions:
         if inst.opname == "OpGraphARM":
-            finish_graph()
-            current_graph = inst
+            finish_data_graph()
+            current_data_graph = inst
             continue
-        if current_graph is None:
+        if current_data_graph is None:
             continue
         if inst.opname == "OpGraphEndARM":
             body_instructions.append(inst)
-            finish_graph()
+            finish_data_graph()
             continue
 
         body_instructions.append(inst)
@@ -101,7 +106,7 @@ def _collect_graphs(
                 inst.operands[3].ref_id if len(inst.operands) >= 4 else None
             )
             inputs.append(
-                GraphArmInput(
+                DataGraphInput(
                     id=inst.result_id,
                     type_id=inst.result_type_id,
                     input_index_id=inst.operands[2].ref_id,
@@ -117,7 +122,7 @@ def _collect_graphs(
             )
             if value_id is not None and output_index_id is not None:
                 outputs.append(
-                    GraphArmOutput(
+                    DataGraphOutput(
                         value_id=value_id,
                         output_index_id=output_index_id,
                         element_index_id=element_index_id,
@@ -127,21 +132,21 @@ def _collect_graphs(
         elif (
             inst.result_id is not None
             and inst.result_type_id is not None
-            and not _is_graph_debug_instruction(
+            and not _is_data_graph_debug_instruction(
                 inst, extended_instruction_imports
             )
         ):
             operations.append(
-                _graph_operation_from_instruction(
+                _data_graph_operation_from_instruction(
                     inst, grammar, extended_instruction_imports
                 )
             )
 
-    finish_graph()
-    return graphs
+    finish_data_graph()
+    return data_graphs
 
 
-def _is_graph_debug_instruction(
+def _is_data_graph_debug_instruction(
     inst: SpirvInstruction,
     extended_instruction_imports: dict[Id, ExtInstImport],
 ) -> bool:
@@ -156,11 +161,11 @@ def _is_graph_debug_instruction(
     )
 
 
-def _graph_operation_from_instruction(
+def _data_graph_operation_from_instruction(
     inst: SpirvInstruction,
     grammar: SpirvGrammar,
     extended_instruction_imports: dict[Id, ExtInstImport],
-) -> GraphArmOperation:
+) -> DataGraphOperation:
     assert inst.result_id is not None
     assert inst.result_type_id is not None
 
@@ -191,7 +196,7 @@ def _graph_operation_from_instruction(
             if ext_inst_opcode is not None
             else "OpExtInst"
         )
-        return GraphArmOperation(
+        return DataGraphOperation(
             id=inst.result_id,
             type_id=inst.result_type_id,
             opcode_name=opcode_name,
@@ -203,7 +208,7 @@ def _graph_operation_from_instruction(
             ext_inst_spec=ext_inst_spec,
         )
 
-    return GraphArmOperation(
+    return DataGraphOperation(
         id=inst.result_id,
         type_id=inst.result_type_id,
         opcode_name=inst.opname,

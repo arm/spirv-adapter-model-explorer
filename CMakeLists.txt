@@ -6,8 +6,8 @@ project(spirv_adapter_model_explorer_native LANGUAGES C CXX)
 
 include(FetchContent)
 
-set(SPIRV_HEADERS_TAG "vulkan-sdk-1.4.350.0" CACHE STRING "Pinned SPIRV-Headers tag")
-set(SPIRV_TOOLS_TAG "vulkan-sdk-1.4.350.0" CACHE STRING "Pinned SPIRV-Tools tag")
+set(SPIRV_HEADERS_TAG "vulkan-sdk-1.4.357.0" CACHE STRING "Pinned SPIRV-Headers tag")
+set(SPIRV_TOOLS_TAG "vulkan-sdk-1.4.357.0" CACHE STRING "Pinned SPIRV-Tools tag")
 
 FetchContent_Declare(
   SPIRV-Headers
