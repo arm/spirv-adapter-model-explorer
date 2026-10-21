@@ -11,7 +11,7 @@ Standalone Model Explorer adapter for SPIR-V binary files.
 
 Prerequisites:
 
-- Python 3.10 to 3.13
+- Python 3.10 to 3.14
 - CMake and a C/C++ build toolchain for the native SPIRV-Tools test support
 - [Hatch](https://hatch.pypa.io/) for the standard development environment
 
