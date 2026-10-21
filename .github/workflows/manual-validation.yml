@@ -145,8 +145,18 @@ jobs:
           path: dist/
           merge-multiple: true
 
+      - name: Check internal publishing configuration
+        shell: bash
+        env:
+          UPLOAD_URL: ${{ vars.INTERNAL_PYPI_UPLOAD_URL }}
+        run: |
+          if [[ -z "$UPLOAD_URL" ]]; then
+            echo "Set INTERNAL_PYPI_UPLOAD_URL before publishing to Artifactory." >&2
+            exit 1
+          fi
+
       - name: Publish distribution to internal PyPI
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.12.4
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: ${{ vars.INTERNAL_PYPI_UPLOAD_URL }}
           user: ${{ secrets.INTERNAL_PYPI_USERNAME }}
