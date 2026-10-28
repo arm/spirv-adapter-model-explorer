@@ -25,7 +25,7 @@ jobs:
         runner: ${{ fromJSON(vars.TEST_RUNNERS) }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -106,7 +106,7 @@ jobs:
       # environment must use the same Python version.
       - name: Set up Python for SBOM generation
         if: runner.os == 'Linux' && runner.arch == 'X64' && matrix.python-version == env.DEFAULT_PY_VERSION
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -226,7 +226,7 @@ jobs:
     permissions: {}
 
     steps:
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.DEFAULT_PY_VERSION }}
 
