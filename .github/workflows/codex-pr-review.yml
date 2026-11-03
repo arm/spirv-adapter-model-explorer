@@ -4,13 +4,17 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+permissions: {}
+
 jobs:
   codex-review:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
     if: >-
       ${{ github.repository_owner != 'arm' &&
       (github.event.action != 'edited' || github.event.changes.base != null) }}
-    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/codex-pr-review.yaml@main
-    with:
-      codex_proxy_url: ${{ vars.CODEX_PROXY_URL }}
+    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/codex-pr-review.yaml@2d163fc0166eeae3317b247a8bc3434e2c711b25
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
