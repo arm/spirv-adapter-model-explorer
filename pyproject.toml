@@ -6,11 +6,12 @@ build-backend = "scikit_build_core.build"
 requires = [
   "scikit-build-core>=0.11",
   "cffi>=1.16",
+  "setuptools-scm>=8",
 ]
 
 [project]
 name = "spirv-adapter-model-explorer"
-version = "0.2.1"
+dynamic = ["version"]
 description = "Adapter for Model Explorer to support SPIR-V binary files"
 readme = "README.md"
 requires-python = ">=3.10, <3.15"
@@ -63,6 +64,14 @@ install.components = ["spirv_adapter_runtime"]
 wheel.packages = ["src/spirv_adapter_model_explorer"]
 wheel.exclude = ["spirv_adapter_model_explorer/tests/**"]
 sdist.include = ["CMakeLists.txt"]
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.setuptools_scm"
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+fallback_version = "0.0.0.dev0"
 
 [tool.hatch.envs.default]
 dependencies = [

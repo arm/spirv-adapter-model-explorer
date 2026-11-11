@@ -8,9 +8,6 @@ inputs:
   python-version:
     description: "Target Python version for the wheel, selected through CIBW_BUILD."
     required: true
-  internal-dev-version:
-    required: false
-    default: "false"
   artifact-name:
     required: false
     default: dist
@@ -28,16 +25,6 @@ runs:
       with:
         enable-cache: false
 
-    - name: Set internal development version
-      if: inputs.internal-dev-version == 'true'
-      shell: bash
-      run: |
-        BASE_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
-        SHORT_SHA="${GITHUB_SHA::7}"
-        DEV_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
-        echo "Building internal development version ${DEV_VERSION} from ${GITHUB_SHA}"
-        sed -i "s/^version = \".*\"$/version = \"${DEV_VERSION}\"/" pyproject.toml
-
     - name: Prepare wheel build metadata
       shell: bash
       env:
@@ -54,9 +41,10 @@ runs:
 
         SPIRV_TOOLS_REF=$(sed -n 's/^set(SPIRV_TOOLS_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
         SPIRV_HEADERS_REF=$(sed -n 's/^set(SPIRV_HEADERS_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
-        WHEEL_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
 
-        uv pip install --system spdx-tools==0.8.3
+        uv pip install --system "setuptools-scm>=8" spdx-tools==0.8.3
+
+        WHEEL_VERSION=$(python -m setuptools_scm)
 
         mkdir -p src/spirv_adapter_model_explorer/vendor/sboms
         python ./scripts/generate-spirv-tools-bin-sbom.py \
